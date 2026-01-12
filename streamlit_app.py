@@ -720,51 +720,6 @@ if generate_button:
 
 
 # Display the generated thread art if available
-# DEBUG: session state diagnostic (temporär - entferne später)
-# DEBUG: session state diagnostic (temporär - zeigt Vorschlag falls möglich)
-with st.expander("DEBUG: session_state Übersicht (temporär)"):
-    st.write("Keys in st.session_state:", list(st.session_state.keys()))
-    st.write("generated_html present?", "generated_html" in st.session_state and st.session_state.generated_html is not None)
-    st.write("decompose_data:", st.session_state.get("decompose_data"))
-
-    n_lines_total_dbg = st.number_input(
-        "Gesamtzahl Linien (für Vorschlag, Debug)",
-        min_value=100,
-        max_value=200000,
-        value=10000,
-        step=100,
-        key="decompose_total_lines_input_dbg",
-    )
-
-    if st.session_state.get("decompose_data"):
-        dd = st.session_state.decompose_data
-        st.write("palette type:", type(dd.get("palette")), "len:", (len(dd.get("palette")) if dd.get("palette") else None))
-        st.write("color_histogram type:", type(dd.get("color_histogram")), "len:", (len(dd.get("color_histogram")) if dd.get("color_histogram") else None))
-        try:
-            obj = SimpleNamespace(palette=dd["palette"], color_histogram=dd["color_histogram"])
-            st.markdown("### Vorgeschlagene Verteilung (automatisch aus Bild):")
-            decompose_image(obj, n_lines_total=n_lines_total_dbg)
-        except Exception as e:
-            st.error(f"Fehler beim Anzeigen der vorgeschlagenen Verteilung: {e}")
-    else:
-        pal = globals().get("palette") or st.session_state.get("palette")
-        nl = globals().get("n_lines") or st.session_state.get("n_lines")
-        st.write("Palette (UI):", pal)
-        st.write("n_lines (UI):", nl)
-        if pal and nl:
-            try:
-                if isinstance(pal, list) and pal and isinstance(pal[0], list):
-                    pal = [tuple(c) for c in pal]
-                total_lines_from_ui = sum(nl) if sum(nl) > 0 else n_lines_total_dbg
-                hist = [float(x) / total_lines_from_ui for x in nl]
-                obj = SimpleNamespace(palette=pal, color_histogram=hist)
-                st.markdown("### Vorgeschlagene Verteilung (geschätzt aus UI):")
-                decompose_image(obj, n_lines_total=n_lines_total_dbg)
-            except Exception as e:
-                st.write("Konnte keine Schätzung anzeigen:", e)
-        else:
-            st.write("Keine decompose-Daten und keine UI-Daten verfügbar. Wähle ein Bild aus oder generiere ein Thread Art.")
-
 if st.session_state.generated_html:
     st.header("Generated Thread Art")
 
