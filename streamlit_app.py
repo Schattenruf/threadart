@@ -579,6 +579,16 @@ if generate_button:
 
 
 # Display the generated thread art if available
+# DEBUG: session state diagnostic (temporär - entferne später)
+with st.expander("DEBUG: session_state Übersicht (temporär)"):
+    st.write("Keys in st.session_state:", list(st.session_state.keys()))
+    st.write("generated_html present?", "generated_html" in st.session_state and st.session_state.generated_html is not None)
+    st.write("decompose_data:", st.session_state.get("decompose_data"))
+    # Falls vorhanden, zeige Typen / Längen
+    if st.session_state.get("decompose_data"):
+        dd = st.session_state.decompose_data
+        st.write("palette type:", type(dd.get("palette")), "len:", (len(dd.get("palette")) if dd.get("palette") else None))
+        st.write("color_histogram type:", type(dd.get("color_histogram")), "len:", (len(dd.get("color_histogram")) if dd.get("color_histogram") else None))
 if st.session_state.generated_html:
     st.header("Generated Thread Art")
 
