@@ -10,6 +10,7 @@ import tempfile
 import traceback
 from collections import defaultdict
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -38,6 +39,91 @@ gc.collect()
 
 from image_color import Img, ThreadArtColorParams
 from streamlit.components.v1 import html as st_html
+# --- Neue Hilfsfunktion: decompose_image (angepasst für Streamlit) ---
+def decompose_image(img_obj, n_lines_total=10000):
+    """
+    Prints / displays a suggested number of lines per color based on the color histogram.
+    Adapted from a Jupyter-style snippet to Streamlit.
+
+    Args:
+        img_obj: object that should provide .palette and .color_histogram
+                 - palette can be a dict: {name: (r,g,b), ...} or a list of (r,g,b)
+                 - color_histogram can be a dict mapping color-name -> frequency (0..1),
+                   or a list of frequencies matching a palette list
+        n_lines_total: total number of lines to distribute
+    """
+    pal = getattr(img_obj, "palette", None)
+    hist = getattr(img_obj, "color_histogram", None)
+
+    if pal is None or hist is None:
+        st.warning("Cannot compute suggestions: object lacks 'palette' or 'color_histogram' attributes.")
+        return
+
+    def render_color_line(color_tuple, name_str, n_lines):
+        r, g, b = tuple(int(c) for c in color_tuple)
+        color_string = str((r, g, b))
+        # Build an HTML line with a color swatch
+        swatch = f"<span style='display:inline-block;width:64px;height:16px;background:rgb{(r,g,b)};border:1px solid #333;margin:0 8px;vertical-align:middle'></span>"
+        text = f"<code>{color_string.ljust(18)}</code>{swatch}<code>{name_str}</code> = {n_lines}"
+        st.markdown(text, unsafe_allow_html=True)
+
+    # Case A: palette is a dict (name -> (r,g,b))
+    if isinstance(pal, dict):
+        # Compute n_lines per palette key order
+        keys = list(pal.keys())
+        # histogram expected to map same keys to frequencies (0..1)
+        try:
+            n_lines_per_color = [int(hist.get(k, 0) * n_lines_total) for k in keys]
+        except Exception:
+            st.warning("Unexpected format for color_histogram; expected dict mapping color-name -> frequency.")
+            return
+
+        # Identify index to absorb rounding remainder.
+        try:
+            sums = [sum(tuple(pal[k])) for k in keys]
+            darkest_idx = sums.index(max(sums))
+        except Exception:
+            darkest_idx = 0
+
+        n_lines_per_color[darkest_idx] += (n_lines_total - sum(n_lines_per_color))
+
+        # Display per-color suggestion
+        max_len_color_name = max(len(k) for k in keys) if keys else 0
+        for idx, k in enumerate(keys):
+            render_color_line(pal[k], k.ljust(max_len_color_name), n_lines_per_color[idx])
+
+        st.code(f"`n_lines_per_color` for you to copy: {n_lines_per_color}")
+
+    # Case B: palette is a list of tuples
+    elif isinstance(pal, (list, tuple)):
+        # histogram might be a list/tuple of frequencies with same length
+        if not isinstance(hist, (list, tuple)):
+            st.warning("Palette is a list but color_histogram is not a list/tuple; cannot reliably map.")
+            return
+
+        if len(hist) != len(pal):
+            st.warning("Length mismatch between palette and histogram; cannot reliably compute distribution.")
+            return
+
+        n_lines_per_color = [int(h * n_lines_total) for h in hist]
+
+        try:
+            sums = [sum(tuple(c)) for c in pal]
+            darkest_idx = sums.index(max(sums))
+        except Exception:
+            darkest_idx = 0
+
+        n_lines_per_color[darkest_idx] += (n_lines_total - sum(n_lines_per_color))
+
+        for idx, c in enumerate(pal):
+            render_color_line(c, f"Color {idx+1}", n_lines_per_color[idx])
+
+        st.code(f"`n_lines_per_color` for you to copy: {n_lines_per_color}")
+
+    else:
+        st.warning("Unrecognized palette format. Expected dict or list of RGB tuples.")
+        return
+# ------------------------------------------------------------------
 
 # Apply custom CSS for a clean, minimalist look
 st.markdown(
@@ -327,6 +413,43 @@ with st.sidebar:
             image,
             width='stretch',
         )
+        # --- Schnell-Histogramm erzeugen, sobald ein Bild ausgewählt wurde ---
+try:
+    est_n_colors = len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else max(1, len(palette))
+    # Verkleinern für Geschwindigkeit
+    thumb_w = 200
+    thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
+    img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
+
+    # Quantisiere auf est_n_colors Farben (Mediancut ist schnell & zuverlässig)
+    quant = img_small.quantize(colors=est_n_colors, method=Image.MEDIANCUT)
+
+    # quant.getcolors() liefert Liste von (count, palette_index)
+    colors_info = quant.getcolors(maxcolors=est_n_colors)
+    palette_list = []
+    hist_list = []
+    if colors_info:
+        # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
+        flat_pal = quant.getpalette()
+        total_pixels = sum(cnt for cnt, idx in colors_info)
+        for cnt, idx in colors_info:
+            # Index im Palette-Array
+            r = flat_pal[idx * 3]
+            g = flat_pal[idx * 3 + 1]
+            b = flat_pal[idx * 3 + 2]
+            palette_list.append((r, g, b))
+            hist_list.append(cnt / total_pixels)
+    # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
+    if not palette_list:
+        palette_list = [(128, 128, 128)] * est_n_colors
+        hist_list = [1.0 / est_n_colors] * est_n_colors
+
+    # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
+    st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
+except Exception:
+    st.session_state.decompose_data = None
+# -----------------------------------------------------------------
+
 
     # Basic parameters
     col1, col2, col3 = st.columns(3)
@@ -568,6 +691,24 @@ if generate_button:
         st.session_state.generated_html = html_content
         st.session_state.sf = my_img.y / my_img.x
 
+# Versuche, echte Palette/Historgrammdaten vom my_img Objekt zu speichern (falls vorhanden).
+try:
+    pal = getattr(my_img, "palette", None)
+    if pal is None:
+        pal = getattr(my_img.args, "palette", None)
+    hist = getattr(my_img, "color_histogram", None)
+    if hist is None:
+        hist = getattr(my_img.args, "color_histogram", None)
+
+    # Wenn vorhanden, in session_state speichern (überschreibt die Upload-Schätzung)
+    if pal is not None and hist is not None:
+        st.session_state.decompose_data = {"palette": pal, "color_histogram": hist}
+    else:
+        # falls nicht vorhanden, belasse vorhandene Schätzung (aus Upload) unverändert
+        st.session_state.decompose_data = st.session_state.get("decompose_data", None)
+except Exception:
+    st.session_state.decompose_data = st.session_state.get("decompose_data", None)
+
         del args
         del my_img
         del line_dict
@@ -580,15 +721,50 @@ if generate_button:
 
 # Display the generated thread art if available
 # DEBUG: session state diagnostic (temporär - entferne später)
+# DEBUG: session state diagnostic (temporär - zeigt Vorschlag falls möglich)
 with st.expander("DEBUG: session_state Übersicht (temporär)"):
     st.write("Keys in st.session_state:", list(st.session_state.keys()))
     st.write("generated_html present?", "generated_html" in st.session_state and st.session_state.generated_html is not None)
     st.write("decompose_data:", st.session_state.get("decompose_data"))
-    # Falls vorhanden, zeige Typen / Längen
+
+    n_lines_total_dbg = st.number_input(
+        "Gesamtzahl Linien (für Vorschlag, Debug)",
+        min_value=100,
+        max_value=200000,
+        value=10000,
+        step=100,
+        key="decompose_total_lines_input_dbg",
+    )
+
     if st.session_state.get("decompose_data"):
         dd = st.session_state.decompose_data
         st.write("palette type:", type(dd.get("palette")), "len:", (len(dd.get("palette")) if dd.get("palette") else None))
         st.write("color_histogram type:", type(dd.get("color_histogram")), "len:", (len(dd.get("color_histogram")) if dd.get("color_histogram") else None))
+        try:
+            obj = SimpleNamespace(palette=dd["palette"], color_histogram=dd["color_histogram"])
+            st.markdown("### Vorgeschlagene Verteilung (automatisch aus Bild):")
+            decompose_image(obj, n_lines_total=n_lines_total_dbg)
+        except Exception as e:
+            st.error(f"Fehler beim Anzeigen der vorgeschlagenen Verteilung: {e}")
+    else:
+        pal = globals().get("palette") or st.session_state.get("palette")
+        nl = globals().get("n_lines") or st.session_state.get("n_lines")
+        st.write("Palette (UI):", pal)
+        st.write("n_lines (UI):", nl)
+        if pal and nl:
+            try:
+                if isinstance(pal, list) and pal and isinstance(pal[0], list):
+                    pal = [tuple(c) for c in pal]
+                total_lines_from_ui = sum(nl) if sum(nl) > 0 else n_lines_total_dbg
+                hist = [float(x) / total_lines_from_ui for x in nl]
+                obj = SimpleNamespace(palette=pal, color_histogram=hist)
+                st.markdown("### Vorgeschlagene Verteilung (geschätzt aus UI):")
+                decompose_image(obj, n_lines_total=n_lines_total_dbg)
+            except Exception as e:
+                st.write("Konnte keine Schätzung anzeigen:", e)
+        else:
+            st.write("Keine decompose-Daten und keine UI-Daten verfügbar. Wähle ein Bild aus oder generiere ein Thread Art.")
+
 if st.session_state.generated_html:
     st.header("Generated Thread Art")
 
@@ -603,7 +779,43 @@ if st.session_state.generated_html:
     b64_html = base64.b64encode(st.session_state.generated_html.encode()).decode()
     href_html = f'<a href="data:text/html;base64,{b64_html}" download="{name}.html">Download HTML File</a>'
     st.markdown(href_html, unsafe_allow_html=True)
+# Vorschlag / Button für Linienverteilung (immer sichtbar, mit Fallback)
+st.subheader("Vorgeschlagene Linienverteilung")
 
+n_lines_total_input = st.number_input(
+    "Gesamtzahl Linien (für Vorschlag)",
+    min_value=100,
+    max_value=200000,
+    value=10000,
+    step=100,
+    key="decompose_total_lines_input",
+)
+
+if st.button("Vorschlag anzeigen", key="show_decompose_global"):
+    if st.session_state.get("decompose_data"):
+        data = st.session_state.decompose_data
+        obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
+        try:
+            decompose_image(obj, n_lines_total=n_lines_total_input)
+        except Exception as e:
+            st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
+    else:
+        st.info("Keine Farbhistogrammdaten gefunden — ich verwende eine Schätzung basierend auf den aktuellen UI-Einstellungen.")
+        try:
+            pal = globals().get("palette") or st.session_state.get("palette")
+            nl = globals().get("n_lines") or st.session_state.get("n_lines")
+            if isinstance(pal, list) and pal and isinstance(pal[0], list):
+                pal = [tuple(c) for c in pal]
+            if pal is None or nl is None:
+                raise RuntimeError("Aktuelle Palette/Zeilen-Einstellungen sind nicht verfügbar. Erzeuge zuerst ein Bild oder wähle ein Demo.")
+
+            total_lines_from_ui = sum(nl) if sum(nl) > 0 else n_lines_total_input
+            hist = [float(x) / total_lines_from_ui for x in nl]
+            obj = SimpleNamespace(palette=pal, color_histogram=hist)
+            decompose_image(obj, n_lines_total=n_lines_total_input)
+        except Exception as e:
+            st.error(f"Keine ausreichenden Daten für eine Schätzung vorhanden: {e}")
+            st.write("Hinweis: Die echte Histogramm-basierte Auswertung wird nur angezeigt, wenn das erzeugende Img-Objekt ein Attribut `color_histogram` liefert und dieses beim Generieren in `st.session_state.decompose_data` gespeichert wurde.")
     # # Show embed code for Squarespace
     # st.subheader("Embed Code for Squarespace")
     # st.text_area("Copy this code into a Code Block in Squarespace:", st.session_state.generated_html, height=200)
