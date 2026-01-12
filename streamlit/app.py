@@ -33,6 +33,9 @@ os.chdir(parent_dir)
 
 gc.collect()
 
+# Ensure the script uses the current working directory
+sys.path.insert(0, os.getcwd())
+
 from image_color import Img, ThreadArtColorParams
 from streamlit.components.v1 import html as st_html
 
