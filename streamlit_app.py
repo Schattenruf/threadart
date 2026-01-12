@@ -32,7 +32,7 @@ if parent_dir not in sys.path:
 #         for subpath in path.iterdir():
 #             st.write("sub: ", subpath)
 
-os.chdir(parent_dir)
+#os.chdir(parent_dir)
 
 gc.collect()
 
