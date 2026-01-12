@@ -10,3 +10,4 @@ webcolors>=1.13.0
 plotly>=5.18.0
 pandas>=2.2.0
 ipython>=8.18.0
+matplotlib
