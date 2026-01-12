@@ -1,0 +1,12 @@
+streamlit>=1.42.2
+Pillow>=10.1.0
+numpy>=1.26.0
+torch>=2.2.0
+einops>=0.7.0
+jaxtyping>=0.2.25
+rich>=13.7.0
+tqdm>=4.66.1
+webcolors>=1.13.0
+plotly>=5.18.0
+pandas>=2.2.0
+ipython>=8.18.0
