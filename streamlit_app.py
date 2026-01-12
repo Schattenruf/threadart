@@ -414,41 +414,41 @@ with st.sidebar:
             width='stretch',
         )
         # --- Schnell-Histogramm erzeugen, sobald ein Bild ausgewählt wurde ---
-try:
-    est_n_colors = len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else max(1, len(palette))
-    # Verkleinern für Geschwindigkeit
-    thumb_w = 200
-    thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
-    img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
+       try:
+           est_n_colors = len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else max(1, len(palette))
+           # Verkleinern für Geschwindigkeit
+           thumb_w = 200
+           thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
+           img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-    # Quantisiere auf est_n_colors Farben (Mediancut ist schnell & zuverlässig)
-    quant = img_small.quantize(colors=est_n_colors, method=Image.MEDIANCUT)
+           # Quantisiere auf est_n_colors Farben (Mediancut ist schnell & zuverlässig)
+           quant = img_small.quantize(colors=est_n_colors, method=Image.MEDIANCUT)
 
-    # quant.getcolors() liefert Liste von (count, palette_index)
-    colors_info = quant.getcolors(maxcolors=est_n_colors)
-    palette_list = []
-    hist_list = []
-    if colors_info:
-        # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
-        flat_pal = quant.getpalette()
-        total_pixels = sum(cnt for cnt, idx in colors_info)
-        for cnt, idx in colors_info:
-            # Index im Palette-Array
-            r = flat_pal[idx * 3]
-            g = flat_pal[idx * 3 + 1]
-            b = flat_pal[idx * 3 + 2]
-            palette_list.append((r, g, b))
-            hist_list.append(cnt / total_pixels)
-    # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
-    if not palette_list:
-        palette_list = [(128, 128, 128)] * est_n_colors
-        hist_list = [1.0 / est_n_colors] * est_n_colors
+           # quant.getcolors() liefert Liste von (count, palette_index)
+           colors_info = quant.getcolors(maxcolors=est_n_colors)
+           palette_list = []
+           hist_list = []
+           if colors_info:
+               # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
+               flat_pal = quant.getpalette()
+               total_pixels = sum(cnt for cnt, idx in colors_info)
+               for cnt, idx in colors_info:
+                   # Index im Palette-Array
+                   r = flat_pal[idx * 3]
+                   g = flat_pal[idx * 3 + 1]
+                   b = flat_pal[idx * 3 + 2]
+                   palette_list.append((r, g, b))
+                   hist_list.append(cnt / total_pixels)
+           # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
+           if not palette_list:
+               palette_list = [(128, 128, 128)] * est_n_colors
+               hist_list = [1.0 / est_n_colors] * est_n_colors
 
-    # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
-    st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
-except Exception:
-    st.session_state.decompose_data = None
-# -----------------------------------------------------------------
+           # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
+           st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
+       except Exception:
+           st.session_state.decompose_data = None
+       # -----------------------------------------------------------------
 
 
     # Basic parameters
