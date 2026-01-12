@@ -691,23 +691,23 @@ if generate_button:
         st.session_state.generated_html = html_content
         st.session_state.sf = my_img.y / my_img.x
 
-# Versuche, echte Palette/Historgrammdaten vom my_img Objekt zu speichern (falls vorhanden).
-try:
-    pal = getattr(my_img, "palette", None)
-    if pal is None:
-        pal = getattr(my_img.args, "palette", None)
-    hist = getattr(my_img, "color_histogram", None)
-    if hist is None:
-        hist = getattr(my_img.args, "color_histogram", None)
+        # Versuche, echte Palette/Historgrammdaten vom my_img Objekt zu speichern (falls vorhanden).
+        try:
+            pal = getattr(my_img, "palette", None)
+            if pal is None:
+                pal = getattr(my_img.args, "palette", None)
+            hist = getattr(my_img, "color_histogram", None)
+            if hist is None:
+                hist = getattr(my_img.args, "color_histogram", None)
 
-    # Wenn vorhanden, in session_state speichern (überschreibt die Upload-Schätzung)
-    if pal is not None and hist is not None:
-        st.session_state.decompose_data = {"palette": pal, "color_histogram": hist}
-    else:
-        # falls nicht vorhanden, belasse vorhandene Schätzung (aus Upload) unverändert
-        st.session_state.decompose_data = st.session_state.get("decompose_data", None)
-except Exception:
-    st.session_state.decompose_data = st.session_state.get("decompose_data", None)
+            # Wenn vorhanden, in session_state speichern (überschreibt die Upload-Schätzung)
+            if pal is not None and hist is not None:
+                st.session_state.decompose_data = {"palette": pal, "color_histogram": hist}
+            else:
+                # falls nicht vorhanden, belasse vorhandene Schätzung (aus Upload) unverändert
+                st.session_state.decompose_data = st.session_state.get("decompose_data", None)
+        except Exception:
+            st.session_state.decompose_data = st.session_state.get("decompose_data", None)
 
         del args
         del my_img
