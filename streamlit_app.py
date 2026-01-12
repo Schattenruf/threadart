@@ -172,7 +172,7 @@ You can create art in 2 ways:
 
 Once you've chosen one of these options, you can hit the "Generate Thread Art" button at the bottom of the left hand menu, to create your thread art!
 
-Note that the quality of output varies a lot based on small parameter changes, so we encourage you to start by looking at some of the demos and see what works well for them, and then try and upload yo[...]
+Note that the quality of output varies a lot based on small parameter changes, so we encourage you to start by looking at some of the demos and see what works well for them, and then try and upload your own image. We've also included some helpful tips next to each input field to help you understand what they do.
 """
 )
 # with st.expander("Some tips for creating good thread art"):
@@ -188,10 +188,6 @@ if "output_name" not in st.session_state:
     st.session_state.output_name = None
 if "temp_dir" not in st.session_state:
     st.session_state.temp_dir = tempfile.TemporaryDirectory()
-
-# Container for storing palette/histogram for the decompose button
-if "decompose_data" not in st.session_state:
-    st.session_state.decompose_data = None
 
 name = None
 
@@ -373,13 +369,12 @@ with st.sidebar:
         st.session_state.generated_html = None
         st.session_state.output_name = None
         st.session_state.sf = None
-        st.session_state.decompose_data = None
 
     # Demo selector
     demo_option = st.selectbox(
         "Choose a demo or create your own",
         demo_presets.keys(),
-        help="Select a demo to try out the thread art generator with preset parameters. Some of the demos are labelled with (fast) or (long) to indicate how long they will take to generate - the (long[...]
+        help="Select a demo to try out the thread art generator with preset parameters. Some of the demos are labelled with (fast) or (long) to indicate how long they will take to generate - the (long) images are larger and more detailed.",
         on_change=reset,
     )
 
@@ -466,15 +461,15 @@ with st.sidebar:
             min_value=0,
             max_value=20,
             value=preset_blur or 4,
-            help="Amount we blur the monochrome images when we split them off from the main image. You can try increasing this if the lines seem too sharp and you want the color gradients to be smooth[...]
+            help="Amount we blur the monochrome images when we split them off from the main image. You can try increasing this if the lines seem too sharp and you want the color gradients to be smoother, but mostly this doesn't have a big effect on the final output.",
         )
 
         group_orders = st.text_input(
             "Group Orders",
             value=preset_group_orders or "4",
-            help="""Sequence we'll use to layer the colored lines onto the image. If this is a comma-separated list of integers, they are interpreted as the indices of colors you've listed, e.g. if ou[...]
+            help="""Sequence we'll use to layer the colored lines onto the image. If this is a comma-separated list of integers, they are interpreted as the indices of colors you've listed, e.g. if our colors were white, red and black then '1,2,1,2,3' means we'd add half the white lines (1), then half the red lines (2), then half the white again (1), then half the red again (2), then all the black lines on top (3). Alternatively, if you just enter a single number then this will be interpreted as a number of loops over all colors, e.g. for three colors, '4' would be interpreted as the sequence '1,2,3,1,2,3,1,2,3,1,2,3'.
 
-We have 2 main tips here: firstly make sure to include enough loops so that no one color dominates the other colors by going on top and masking them all, and secondly make sure the darker colors are o[...]
+We have 2 main tips here: firstly make sure to include enough loops so that no one color dominates the other colors by going on top and masking them all, and secondly make sure the darker colors are on top since this looks a lot better (in particular, we strongly recommend having black on top).
 """,
         )
 
@@ -538,7 +533,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
                 max_value=15000,
                 value=n_lines[i],
                 key=f"lines_{i}",
-                help="The total number of lines we'll draw for this color. 3 guidelines to consider here: (1) the line numbers should be roughly in proportion with their density in your image, (2) you[...]
+                help="The total number of lines we'll draw for this color. 3 guidelines to consider here: (1) the line numbers should be roughly in proportion with their density in your image, (2) you should make sure to include a lot of black lines for most images because that's an important component of making a good piece of thread art, and (3) you should aim for about 6000 - 20000 total lues when summed over all colors (the exact number depends on some of your other parameters, and how detailed you want the piece to be).",
             )
 
         with col3:
@@ -549,7 +544,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
                 value=darkness_values[i],
                 key=f"darkness_{i}",
                 step=0.01,
-                help="The float value we'll subtract from pixels after each line is drawn (pixels start at a maximum value of 1.0). Lines are constantly drawn through the regions whose pixels have the[...]
+                help="The float value we'll subtract from pixels after each line is drawn (pixels start at a maximum value of 1.0). Lines are constantly drawn through the regions whose pixels have the highest average value. Smaller values here will produce images with a higher contrast (because we draw more lines in the dark areas before moving to the light areas).",
             )
 
         new_palette.append([r, g, b])
@@ -572,7 +567,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
             max_value=0.3,
             value=preset_html_line_width or 0.13,
             step=0.01,
-            help="Width of the lines in the output image. Generally this can be kept at 0.14; smaller values mean thinner lines and look better when your images are very large and have a lot of lines.[...]
+            help="Width of the lines in the output image. Generally this can be kept at 0.14; smaller values mean thinner lines and look better when your images are very large and have a lot of lines.",
         )
     with cols[1]:
         html_width = st.number_input(
@@ -594,6 +589,20 @@ if generate_button:
         st.stop()
 
     name = preset_name or "custom_thread_art"
+
+    # if isinstance(demo_image_path, Path) and demo_image_path.exists():
+    #     image_path = demo_image_path.name
+    #     w_filename = None
+    # elif uploaded_file is not None:
+    #     # Save the uploaded file to a temporary location
+    #     temp_img = Path(st.session_state.temp_dir.name) / f"uploaded_image.{uploaded_file.name.split('.')[-1]}"
+    #     with open(temp_img, "wb") as f:
+    #         f.write(uploaded_file.getbuffer())
+    #     image_path = temp_img.name
+    #     w_filename = None
+    # else:
+    #     st.error("Please upload an image or select a demo.")
+    #     st.stop()
 
     # TODO - why is this necessary?
     palette = [tuple(color) for color in palette]
@@ -649,23 +658,6 @@ if generate_button:
         st.session_state.generated_html = html_content
         st.session_state.sf = my_img.y / my_img.x
 
-        # Store minimal data for the "decompose" button (palette + histogram) if available
-        try:
-            pal = getattr(my_img, "palette", None)
-            if pal is None:
-                pal = getattr(my_img.args, "palette", None)
-            hist = getattr(my_img, "color_histogram", None)
-            if hist is None:
-                hist = getattr(my_img.args, "color_histogram", None)
-
-            # Only store if we have both
-            if pal is not None and hist is not None:
-                st.session_state.decompose_data = {"palette": pal, "color_histogram": hist}
-            else:
-                st.session_state.decompose_data = None
-        except Exception:
-            st.session_state.decompose_data = None
-
         del args
         del my_img
         del line_dict
@@ -691,24 +683,6 @@ if st.session_state.generated_html:
     b64_html = base64.b64encode(st.session_state.generated_html.encode()).decode()
     href_html = f'<a href="data:text/html;base64,{b64_html}" download="{name}.html">Download HTML File</a>'
     st.markdown(href_html, unsafe_allow_html=True)
-
-    # Button: Zeige vorgeschlagene Linienverteilung (falls Daten vorhanden)
-    if st.session_state.decompose_data:
-        with st.expander("Vorgeschlagene Linienverteilung anzeigen"):
-            n_lines_total = st.number_input(
-                "Gesamtzahl Linien (für Vorschlag)",
-                min_value=100,
-                max_value=200000,
-                value=10000,
-                step=100,
-            )
-            if st.button("Vorschlag anzeigen", key="show_decompose"):
-                data = st.session_state.decompose_data
-                obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
-                try:
-                    decompose_image(obj, n_lines_total=n_lines_total)
-                except Exception as e:
-                    st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
 
     # # Show embed code for Squarespace
     # st.subheader("Embed Code for Squarespace")
