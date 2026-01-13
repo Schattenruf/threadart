@@ -4,8 +4,8 @@ import io
 import os
 import sys
 
-print("Working directory:", os.getcwd())
-print("Directory contents:", os.listdir())
+#print("Working directory:", os.getcwd())
+#print("Directory contents:", os.listdir())
 import tempfile
 import traceback
 from collections import defaultdict
