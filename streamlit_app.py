@@ -52,6 +52,8 @@ def decompose_image(img_obj, n_lines_total=10000):
                    or a list of frequencies matching a palette list
         n_lines_total: total number of lines to distribute
     """
+    args = ThreadArtColorParams(PARAMS)
+    MyImg = Img(args.img_dict)
     pal = getattr(img_obj, "palette", None)
     hist = getattr(img_obj, "color_histogram", None)
 
