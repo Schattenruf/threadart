@@ -52,7 +52,22 @@ def decompose_image(img_obj, n_lines_total=10000):
                    or a list of frequencies matching a palette list
         n_lines_total: total number of lines to distribute
     """
-    args = ThreadArtColorParams(PARAMS)
+    args = ThreadArtColorParams(                
+                name=name,
+                x=x_size,
+                n_nodes=n_nodes_real,
+                filename=None,
+                w_filename=preset_w_filename,
+                palette=palette,
+                n_lines_per_color=n_lines,
+                shape=shape,
+                n_random_lines=n_random_lines,
+                darkness=darkness,
+                blur_rad=blur_rad,
+                group_orders=group_orders,
+                image=image,
+                step_size=preset_step_size or 1.618, # golden ratio for the lulz
+    )
     MyImg = Img(args.img_dict)
     pal = getattr(img_obj, "palette", None)
     hist = getattr(img_obj, "color_histogram", None)
