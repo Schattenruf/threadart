@@ -69,18 +69,18 @@ def decompose_image(img_obj, n_lines_total=10000):
                 step_size=preset_step_size or 1.618, # golden ratio for the lulz
     )
     img_dict = dict(
-                x=self.x, 
-                y=self.y, 
-                filename=self.filename, 
-                d_pixels=self.d_pixels, 
-                palette=self.palette, 
-                w_filename=self.w_filename, 
+                x=x, 
+                y=y, 
+                filename="images/{}".format(filename), 
+                d_pixels=d_pixels, 
+                palette=palette, 
+                w_filename=w_filename, 
 
                 wneg_filename=None,
                 other_colors_weighting=0,
                 dithering_params=["clamp"],
-                pixels_per_batch=self.pixels_per_batch, 
-                num_overlap_rows=self.num_overlap_rows
+                pixels_per_batch=pixels_per_batch, 
+                num_overlap_rows=num_overlap_rows
     )
     MyImg = Img(args.img_dict)
     pal = getattr(img_obj, "palette", None)
