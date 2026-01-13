@@ -52,37 +52,7 @@ def decompose_image(img_obj, n_lines_total=10000):
                    or a list of frequencies matching a palette list
         n_lines_total: total number of lines to distribute
     """
-    args = ThreadArtColorParams(                
-                name=name,
-                x=x_size,
-                n_nodes=n_nodes_real,
-                filename=None,
-                w_filename=preset_w_filename,
-                palette=palette,
-                n_lines_per_color=n_lines,
-                shape=shape,
-                n_random_lines=n_random_lines,
-                darkness=darkness,
-                blur_rad=blur_rad,
-                group_orders=group_orders,
-                image=image,
-                step_size=preset_step_size or 1.618, # golden ratio for the lulz
-    )
-    img_dict = dict(
-                x=x, 
-                y=y, 
-                filename="images/{}".format(filename), 
-                d_pixels=d_pixels, 
-                palette=palette, 
-                w_filename=w_filename, 
 
-                wneg_filename=None,
-                other_colors_weighting=0,
-                dithering_params=["clamp"],
-                pixels_per_batch=pixels_per_batch, 
-                num_overlap_rows=num_overlap_rows
-    )
-    MyImg = Img(args.img_dict)
     pal = getattr(img_obj, "palette", None)
     hist = getattr(img_obj, "color_histogram", None)
 
@@ -90,7 +60,7 @@ def decompose_image(img_obj, n_lines_total=10000):
         st.warning("Cannot compute suggestions: object lacks 'palette' or 'color_histogram' attributes.")
         return
 
-    def render_color_line(color_tuple, name_str, n_lines):
+   def render_color_line(color_tuple, name_str, n_lines):
         r, g, b = tuple(int(c) for c in color_tuple)
         color_string = str((r, g, b))
         # Build an HTML line with a color swatch
@@ -123,7 +93,7 @@ def decompose_image(img_obj, n_lines_total=10000):
         for idx, k in enumerate(keys):
             render_color_line(pal[k], k.ljust(max_len_color_name), n_lines_per_color[idx])
 
-        st.code(f"`n_lines_per_color` for you to copy: {n_lines_per_color}")
+        st.code(f"for you to copy: {n_lines_per_color}")
 
     # Case B: palette is a list of tuples
     elif isinstance(pal, (list, tuple)):
