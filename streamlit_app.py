@@ -52,7 +52,6 @@ def decompose_image(img_obj, n_lines_total=10000):
                    or a list of frequencies matching a palette list
         n_lines_total: total number of lines to distribute
     """
-
     pal = getattr(img_obj, "palette", None)
     hist = getattr(img_obj, "color_histogram", None)
 
@@ -60,7 +59,7 @@ def decompose_image(img_obj, n_lines_total=10000):
         st.warning("Cannot compute suggestions: object lacks 'palette' or 'color_histogram' attributes.")
         return
 
-   def render_color_line(color_tuple, name_str, n_lines):
+    def render_color_line(color_tuple, name_str, n_lines):
         r, g, b = tuple(int(c) for c in color_tuple)
         color_string = str((r, g, b))
         # Build an HTML line with a color swatch
@@ -93,7 +92,7 @@ def decompose_image(img_obj, n_lines_total=10000):
         for idx, k in enumerate(keys):
             render_color_line(pal[k], k.ljust(max_len_color_name), n_lines_per_color[idx])
 
-        st.code(f"for you to copy: {n_lines_per_color}")
+        st.code(f"`n_lines_per_color` for you to copy: {n_lines_per_color}")
 
     # Case B: palette is a list of tuples
     elif isinstance(pal, (list, tuple)):
