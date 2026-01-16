@@ -602,14 +602,16 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
         n_lines = [1000, 800, 600]
         darkness_values = [0.17, 0.17, 0.17]
 
-    # Allow adding or removing colors
-    num_colors = st.number_input(
-        "Number of Colors",
-        min_value=1,
-        max_value=10,
-        value=len(palette),
-        help="We recommend always including black and white, as well as between 1 and 4 other colors depending on your image.",
-    )
+# Number of Colors (user control). Placed BEFORE image quantize so suggestions can read it.
+num_colors = st.number_input(
+    "Number of Colors",
+    min_value=1,
+    max_value=10,
+    # Default: if demo preset provides palette use that length, otherwise 3
+    value=(len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3),
+    key="num_colors_input",
+    help="We recommend always including black and white, as well as between 1 and 4 other colors depending on your image.",
+)
 
     num_colors_current = len(palette)
     if num_colors != num_colors_current:
