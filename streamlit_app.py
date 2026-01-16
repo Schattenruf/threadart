@@ -501,6 +501,38 @@ with st.sidebar:
             # don't break the UI if anything fails here
             pass
         # =======================================================================================================
+            # Prefill widgets from suggested palette/lines if they are not already set in session_state
+        try:
+            if 'preset_palette' in locals() and preset_palette:
+                for i, col in enumerate(preset_palette):
+                    # color picker expects hex string
+                    hex_col = f"#{int(col[0]):02x}{int(col[1]):02x}{int(col[2]):02x}"
+                    # color picker key: color_pick_{i}
+                    key_color = f"color_pick_{i}"
+                    if key_color not in st.session_state:
+                        st.session_state[key_color] = hex_col
+
+                if 'preset_lines' in locals() and preset_lines:
+                    for i, val in enumerate(preset_lines):
+                        key_lines = f"lines_{i}"
+                        # only set if the widget key not already present (so we don't clobber user edits)
+                        if key_lines not in st.session_state:
+                            st.session_state[key_lines] = int(val)
+
+                if 'preset_darkness' in locals() and preset_darkness:
+                    for i, val in enumerate(preset_darkness):
+                        key_dark = f"darkness_{i}"
+                        if key_dark not in st.session_state:
+                            st.session_state[key_dark] = float(val)
+
+                # Optional: ensure the visible "Number of Colors" control shows the suggested number
+                # (this requires you to give the num_colors number_input a key; see note below)
+                # desired_num_colors = len(preset_palette)
+                # if "num_colors_input" not in st.session_state:
+                #     st.session_state["num_colors_input"] = desired_num_colors
+        except Exception:
+            # fail silently - do not break the UI
+            pass
             
     # Basic parameters
     col1, col2, col3 = st.columns(3)
