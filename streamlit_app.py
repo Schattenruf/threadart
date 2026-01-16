@@ -414,94 +414,94 @@ with st.sidebar:
             width='stretch',
         )
         # --- Schnell-Histogramm erzeugen, sobald ein Bild ausgewählt wurde ---
-    try:
-        est_n_colors = len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else max(1, len(palette))
-        # Verkleinern für Geschwindigkeit
-        thumb_w = 200
-        thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
-        img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
+        try:
+            est_n_colors = len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3
+            # Verkleinern für Geschwindigkeit
+            thumb_w = 200
+            thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
+            img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-        # Quantisiere auf est_n_colors Farben (Mediancut ist schnell & zuverlässig)
-        quant = img_small.quantize(colors=est_n_colors, method=Image.MEDIANCUT)
+            # Quantisiere auf est_n_colors Farben (Mediancut ist schnell & zuverlässig)
+            quant = img_small.quantize(colors=est_n_colors, method=Image.MEDIANCUT)
 
-        # quant.getcolors() liefert Liste von (count, palette_index)
-        colors_info = quant.getcolors(maxcolors=est_n_colors)
-        palette_list = []
-        hist_list = []
-        if colors_info:
-            # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
-            flat_pal = quant.getpalette()
-            total_pixels = sum(cnt for cnt, idx in colors_info)
-            for cnt, idx in colors_info:
-                # Index im Palette-Array
-                r = flat_pal[idx * 3]
-                g = flat_pal[idx * 3 + 1]
-                b = flat_pal[idx * 3 + 2]
-                palette_list.append((r, g, b))
-                hist_list.append(cnt / total_pixels)
-        # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
-        if not palette_list:
-            palette_list = [(128, 128, 128)] * est_n_colors
-            hist_list = [1.0 / est_n_colors] * est_n_colors
+            # quant.getcolors() liefert Liste von (count, palette_index)
+            colors_info = quant.getcolors(maxcolors=est_n_colors)
+            palette_list = []
+            hist_list = []
+            if colors_info:
+                # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
+                flat_pal = quant.getpalette()
+                total_pixels = sum(cnt for cnt, idx in colors_info)
+                for cnt, idx in colors_info:
+                    # Index im Palette-Array
+                    r = flat_pal[idx * 3]
+                    g = flat_pal[idx * 3 + 1]
+                    b = flat_pal[idx * 3 + 2]
+                    palette_list.append((r, g, b))
+                    hist_list.append(cnt / total_pixels)
+            # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
+            if not palette_list:
+                palette_list = [(128, 128, 128)] * est_n_colors
+                hist_list = [1.0 / est_n_colors] * est_n_colors
 
-        # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
-        st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
-    except Exception:
-        st.session_state.decompose_data = None
-    # -----------------------------------------------------------------
-    # ======= Add automatic UI suggestions based on quantize result (insert after quantize try/except) =======
-    try:
-        # get palette/hist from locals (quantize) or from session_state fallback
-        if "palette_list" in locals() and "hist_list" in locals():
-            pl = palette_list
-            hl = hist_list
-        else:
-            dd = st.session_state.get("decompose_data")
-            if dd:
-                pl = dd.get("palette", []) or []
-                hl = dd.get("color_histogram", []) or []
+            # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
+            st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
+        except Exception:
+            st.session_state.decompose_data = None
+        # -----------------------------------------------------------------
+
+        # ======= Add automatic UI suggestions based on quantize result (insert after quantize try/except) =======
+        try:
+            # get palette/hist from locals (quantize) or from session_state fallback
+            if "palette_list" in locals() and "hist_list" in locals():
+                pl = palette_list
+                hl = hist_list
             else:
-                pl = []
-                hl = []
-    
-        # Only proceed if we have a palette estimate
-        if pl:
-            # Only auto-fill when there isn't already a demo preset palette
-            if not preset_palette:
-                DEFAULT_TOTAL_SUGGESTED_LINES = 10000
+                dd = st.session_state.get("decompose_data")
+                if dd:
+                    pl = dd.get("palette", []) or []
+                    hl = dd.get("color_histogram", []) or []
+                else:
+                    pl = []
+                    hl = []
 
-                # normalize palette items to tuples of ints
-                suggested_palette = [tuple(map(int, c)) for c in pl]
+            # Only proceed if we have a palette estimate
+            if pl:
+                # Only auto-fill when there isn't already a demo preset palette
+                if not preset_palette:
+                    DEFAULT_TOTAL_SUGGESTED_LINES = 10000
 
-                # compute suggested lines; avoid zeros
-                suggested_lines = [max(100, int(h * DEFAULT_TOTAL_SUGGESTED_LINES)) for h in hl]
+                    # normalize palette items to tuples of ints
+                    suggested_palette = [tuple(map(int, c)) for c in pl]
 
-                # fix rounding remainder by adding to the darkest color (same heuristic as elsewhere)
-                remainder = DEFAULT_TOTAL_SUGGESTED_LINES - sum(suggested_lines)
-                if remainder != 0:
-                    try:
-                        sums = [sum(c) for c in suggested_palette]
-                        darkest_idx = sums.index(max(sums))
-                    except Exception:
-                        darkest_idx = 0
-                    suggested_lines[darkest_idx] += remainder
+                    # compute suggested lines; avoid zeros
+                    suggested_lines = [max(100, int(h * DEFAULT_TOTAL_SUGGESTED_LINES)) for h in hl]
 
-                # default darkness values (adjust if you want heuristics here)
-                suggested_darkness = [0.17] * len(suggested_palette)
+                    # fix rounding remainder by adding to the darkest color (same heuristic as elsewhere)
+                    remainder = DEFAULT_TOTAL_SUGGESTED_LINES - sum(suggested_lines)
+                    if remainder != 0:
+                        try:
+                            sums = [sum(c) for c in suggested_palette]
+                            darkest_idx = sums.index(max(sums))
+                        except Exception:
+                            darkest_idx = 0
+                        suggested_lines[darkest_idx] += remainder
 
-                # set local preset_* variables used later to render the UI
-                preset_palette = suggested_palette
-                preset_lines = suggested_lines
-                preset_darkness = suggested_darkness
+                    # default darkness values (adjust if you want heuristics here)
+                    suggested_darkness = [0.17] * len(suggested_palette)
 
-                # also keep session_state in sync
-                st.session_state.decompose_data = {"palette": suggested_palette, "color_histogram": hl}
-    except Exception:
-        # don't break the UI if anything fails here
-        pass
-# =======================================================================================================
+                    # set local preset_* variables used later to render the UI
+                    preset_palette = suggested_palette
+                    preset_lines = suggested_lines
+                    preset_darkness = suggested_darkness
 
-
+                    # also keep session_state in sync
+                    st.session_state.decompose_data = {"palette": suggested_palette, "color_histogram": hl}
+        except Exception:
+            # don't break the UI if anything fails here
+            pass
+        # =======================================================================================================
+            
     # Basic parameters
     col1, col2, col3 = st.columns(3)
     with col1:
