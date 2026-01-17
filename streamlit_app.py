@@ -431,11 +431,11 @@ with st.sidebar:
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
             img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-            # Quantisiere auf viele Farben, um Diversität zu erfassen
-            quant = img_small.quantize(colors=min(50, est_n_colors * 10), method=Image.MEDIANCUT)
+            # Quantisiere auf MEHR Farben, um auch seltene Farben wie grüne Augen zu erfassen
+            quant = img_small.quantize(colors=min(128, est_n_colors * 20), method=Image.MEDIANCUT)
 
             # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=50)
+            colors_info = quant.getcolors(maxcolors=128)
             all_colors = []
             all_freqs = []
             if colors_info:
@@ -457,25 +457,27 @@ with st.sidebar:
                 brightness = (r + g + b) / 3
                 
                 # Schwarz/Weiß haben Priorität (niedrige/hohe Helligkeit)
-                if brightness < 50:
+                if brightness < 40:
                     return 'black'
-                if brightness > 200:
+                if brightness > 210:
                     return 'white'
                 
                 # Für farbige Pixel: Welcher Kanal dominiert?
                 max_val = max(r, g, b)
-                # Mindestens 30 Unterschied zum nächsten Kanal, sonst zu entsättigt
-                if max_val - sorted([r, g, b])[-2] < 30:
-                    # Zu grau/entsättigt → zur nächsten Achse
+                min_val = min(r, g, b)
+                saturation = (max_val - min_val) / max_val if max_val > 0 else 0
+                
+                # Wenn sehr wenig Sättigung (< 0.2), als Graustufe klassifizieren
+                if saturation < 0.2:
                     if brightness < 128:
                         return 'black'
                     else:
                         return 'white'
                 
-                # Dominante Farbe
-                if r == max_val:
+                # Dominante Farbe (welcher Kanal ist größer als die anderen?)
+                if r >= g and r >= b:
                     return 'red'
-                elif g == max_val:
+                elif g >= r and g >= b:
                     return 'green'
                 else:
                     return 'blue'
