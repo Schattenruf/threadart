@@ -450,48 +450,45 @@ with st.sidebar:
                     all_colors.append((r, g, b))
                     all_freqs.append(cnt / total_pixels)
             
-            # --- Direkter Diversity-Ansatz: Wähle die diversesten Farben ---
-            def color_distance(c1, c2):
-                """Euklidische Distanz im RGB-Raum"""
-                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
-            
-            if all_colors:
-                # Sortiere nach Häufigkeit
-                sorted_by_freq = sorted(zip(all_colors, all_freqs), key=lambda x: x[1], reverse=True)
-                
-                # Greedy-Auswahl: Starte mit häufigster, dann wähle immer die mit größtem Mindestabstand
-                selected_colors = [sorted_by_freq[0][0]]
-                selected_freqs = [sorted_by_freq[0][1]]
-                remaining = [(c, f) for c, f in sorted_by_freq[1:]]
-                
-                while len(selected_colors) < est_n_colors and remaining:
-                    # Finde Farbe mit max. Mindestabstand zu bereits gewählten
-                    best_idx = 0
-                    best_min_dist = -1
+            # --- K-Means Clustering: Finde est_n_colors repräsentative Farben ---
+            if all_colors and len(all_colors) > 0:
+                try:
+                    from sklearn.cluster import KMeans
+                    import numpy as np
                     
-                    for idx, (color, freq) in enumerate(remaining):
-                        min_dist = min(color_distance(color, sel) for sel in selected_colors)
-                        if min_dist > best_min_dist:
-                            best_min_dist = min_dist
-                            best_idx = idx
+                    # Konvertiere zu Array für K-Means
+                    colors_array = np.array(all_colors, dtype=np.float32)
+                    freqs_array = np.array(all_freqs, dtype=np.float32)
                     
-                    # Füge beste Farbe hinzu
-                    color, freq = remaining.pop(best_idx)
-                    selected_colors.append(color)
-                    selected_freqs.append(freq)
-                
-                palette_list = selected_colors[:est_n_colors]
-                hist_list = selected_freqs[:est_n_colors]
-                
-                # Renormalisiere Histogramm
-                total = sum(hist_list)
-                if total > 0:
-                    hist_list = [h / total for h in hist_list]
-                
-                # DEBUG: Zeige RGB-Werte der gewählten Farben
-                debug_colors = ", ".join([f"RGB{c}" for c in palette_list[:5]])
-                st.write(f"🔍 Debug - Top 5 Farben: {debug_colors}")
-                st.write(f"🎨 Ausgewählte {len(palette_list)} Farben mit maximaler Diversity")
+                    # K-Means mit est_n_colors Clustern
+                    kmeans = KMeans(n_clusters=min(est_n_colors, len(all_colors)), random_state=42, n_init=10)
+                    labels = kmeans.fit_predict(colors_array)
+                    centers = kmeans.cluster_centers_.astype(int)
+                    
+                    # Berechne Häufigkeit pro Cluster
+                    cluster_freqs = []
+                    for i in range(len(centers)):
+                        mask = labels == i
+                        cluster_freqs.append(np.sum(freqs_array[mask]))
+                    
+                    # Sortiere nach Häufigkeit
+                    sorted_idx = sorted(range(len(centers)), key=lambda i: cluster_freqs[i], reverse=True)
+                    
+                    palette_list = [tuple(centers[i]) for i in sorted_idx]
+                    hist_list = [cluster_freqs[i] for i in sorted_idx]
+                    
+                    # Renormalisiere
+                    total = sum(hist_list)
+                    if total > 0:
+                        hist_list = [h / total for h in hist_list]
+                    
+                    st.write(f"🔍 K-Means: {len(palette_list)} Cluster gefunden - sollte grün enthalten!")
+                    
+                except ImportError:
+                    # Fallback ohne sklearn: Nutze quantize mit höherer Auflösung
+                    st.write("⚠️ sklearn nicht verfügbar, nutze Fallback-Quantisierung...")
+                    palette_list = []
+                    hist_list = []
             else:
                 palette_list = []
                 hist_list = []
