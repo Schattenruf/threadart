@@ -605,8 +605,8 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
 
     if preset_palette:
         palette = list(preset_palette)
-        n_lines = preset_lines
-        darkness_values = list(preset_darkness)
+        n_lines = list(preset_lines) if preset_lines else [1000] * len(preset_palette)
+        darkness_values = list(preset_darkness) if preset_darkness else [0.17] * len(preset_palette)
     else:
         # Default to 3 colors if custom
         palette = [(0, 0, 0), (255, 0, 0), (255, 255, 255)]
