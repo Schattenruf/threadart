@@ -450,51 +450,54 @@ with st.sidebar:
                     palette_list.append((r, g, b))
                     hist_list.append(cnt / total_pixels)
             
-            # --- Wähle kontrastierende Farben aus (verhindert zu ähnliche Farben) ---
+            # --- Wähle kontrastierende Farben aus mit adaptivem Schwellwert ---
             def color_distance(c1, c2):
                 """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
                 return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
             
             if palette_list and len(palette_list) > est_n_colors:
-                # Minimum Distanz zwischen ausgewählten Farben (niedriger = mehr Variation erlaubt)
-                MIN_COLOR_DISTANCE = 40  # Werte zwischen 30-60 sind sinnvoll
-                
                 # Sortiere erst nach Häufigkeit
                 sorted_pairs = sorted(zip(palette_list, hist_list), key=lambda x: x[1], reverse=True)
                 
-                # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
-                selected_palette = []
-                selected_hist = []
-                
-                for color, freq in sorted_pairs:
-                    # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
-                    is_distinct = True
-                    for existing_color in selected_palette:
-                        if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
-                            is_distinct = False
+                # Adaptive Strategie: Versuche mit verschiedenen Distanzen, bis wir genug Farben haben
+                for MIN_COLOR_DISTANCE in [50, 40, 30, 20, 10]:
+                    selected_palette = []
+                    selected_hist = []
+                    
+                    # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
+                    for color, freq in sorted_pairs:
+                        # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
+                        is_distinct = True
+                        for existing_color in selected_palette:
+                            if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
+                                is_distinct = False
+                                break
+                        
+                        if is_distinct:
+                            selected_palette.append(color)
+                            selected_hist.append(freq)
+                        else:
+                            # Addiere Häufigkeit zur ähnlichsten Farbe
+                            if selected_palette:
+                                closest_idx = min(range(len(selected_palette)), 
+                                                key=lambda i: color_distance(color, selected_palette[i]))
+                                selected_hist[closest_idx] += freq
+                        
+                        # Stoppe, wenn wir genug Farben haben
+                        if len(selected_palette) >= est_n_colors:
                             break
                     
-                    if is_distinct:
-                        selected_palette.append(color)
-                        selected_hist.append(freq)
-                    else:
-                        # Addiere Häufigkeit zur ähnlichsten Farbe
-                        closest_idx = min(range(len(selected_palette)), 
-                                        key=lambda i: color_distance(color, selected_palette[i]))
-                        selected_hist[closest_idx] += freq
-                    
-                    # Stoppe, wenn wir genug Farben haben
+                    # Wenn wir genug Farben gefunden haben, breche ab
                     if len(selected_palette) >= est_n_colors:
                         break
                 
-                # Falls wir zu wenig distinkte Farben gefunden haben, fülle auf
-                while len(selected_palette) < est_n_colors and len(sorted_pairs) > len(selected_palette):
-                    # Nimm einfach die nächste verfügbare Farbe
-                    for color, freq in sorted_pairs:
-                        if color not in selected_palette:
-                            selected_palette.append(color)
-                            selected_hist.append(freq)
-                            break
+                # Falls immer noch zu wenig, füge einfach die nächsten Farben hinzu
+                for color, freq in sorted_pairs:
+                    if len(selected_palette) >= est_n_colors:
+                        break
+                    if color not in selected_palette:
+                        selected_palette.append(color)
+                        selected_hist.append(freq)
                 
                 palette_list = selected_palette[:est_n_colors]
                 hist_list = selected_hist[:est_n_colors]
