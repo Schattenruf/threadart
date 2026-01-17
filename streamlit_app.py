@@ -431,11 +431,11 @@ with st.sidebar:
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
             img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-            # Quantisiere auf est_n_colors Farben (Mediancut ist schnell & zuverlässig)
-            quant = img_small.quantize(colors=est_n_colors, method=Image.MEDIANCUT)
+            # Quantisiere auf mehr Farben als gewünscht, damit wir dann mergen können
+            quant = img_small.quantize(colors=est_n_colors * 3, method=Image.MEDIANCUT)
 
             # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=est_n_colors)
+            colors_info = quant.getcolors(maxcolors=est_n_colors * 3)
             palette_list = []
             hist_list = []
             if colors_info:
@@ -449,6 +449,49 @@ with st.sidebar:
                     b = flat_pal[idx * 3 + 2]
                     palette_list.append((r, g, b))
                     hist_list.append(cnt / total_pixels)
+            
+            # --- Merge ähnliche Farben zusammen und behalte nur starke Kontraste ---
+            def color_distance(c1, c2):
+                """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
+                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
+            
+            if palette_list:
+                # Minimum Distanz für zwei unterschiedliche Farben (höher = weniger Farben, mehr Kontrast)
+                MIN_COLOR_DISTANCE = 60  # Werte zwischen 40-80 sind sinnvoll
+                
+                merged_palette = []
+                merged_hist = []
+                
+                for color, freq in zip(palette_list, hist_list):
+                    # Prüfe, ob diese Farbe zu einer bereits vorhandenen ähnlich ist
+                    merged = False
+                    for i, existing_color in enumerate(merged_palette):
+                        if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
+                            # Merge: addiere Frequenz zur existierenden Farbe
+                            # Gewichte die Farbe nach Häufigkeit
+                            total_freq = merged_hist[i] + freq
+                            merged_palette[i] = tuple(
+                                int((existing_color[j] * merged_hist[i] + color[j] * freq) / total_freq)
+                                for j in range(3)
+                            )
+                            merged_hist[i] = total_freq
+                            merged = True
+                            break
+                    
+                    if not merged:
+                        merged_palette.append(color)
+                        merged_hist.append(freq)
+                
+                # Sortiere nach Häufigkeit und nimm die Top est_n_colors
+                sorted_pairs = sorted(zip(merged_palette, merged_hist), key=lambda x: x[1], reverse=True)
+                palette_list = [p for p, h in sorted_pairs[:est_n_colors]]
+                hist_list = [h for p, h in sorted_pairs[:est_n_colors]]
+                
+                # Renormalisiere Histogramm
+                total = sum(hist_list)
+                if total > 0:
+                    hist_list = [h / total for h in hist_list]
+            
             # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
             if not palette_list:
                 palette_list = [(128, 128, 128)] * est_n_colors
