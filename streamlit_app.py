@@ -538,6 +538,12 @@ with st.sidebar:
                 total = sum(hist_list)
                 if total > 0:
                     hist_list = [h / total for h in hist_list]
+                
+                # DEBUG: Zeige erkannte Kategorien
+                debug_cats = {cat: sum(f for c, f in items) if items else 0 for cat, items in categories.items()}
+                debug_str = "Kategorien: " + ", ".join([f"{k}={v:.1%}" for k, v in sorted(debug_cats.items(), key=lambda x: x[1], reverse=True)])
+                st.write(f"🔍 Debug - {debug_str}")
+                st.write(f"🎨 Ausgewählte Farben: {len(palette_list)}/{est_n_colors} | Kategorien mit Farben: {len([c for c in categories.values() if c])}")
             else:
                 palette_list = []
                 hist_list = []
