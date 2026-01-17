@@ -53,7 +53,8 @@ def rgb_to_hsv(img_rgb):
     minc = np.min(arr, axis=-1)
     v = maxc
     delta = maxc - minc
-    s = np.where(maxc == 0, 0, delta / maxc)
+    # Fix division by zero warning
+    s = np.divide(delta, maxc, out=np.zeros_like(delta), where=maxc!=0)
 
     h = np.zeros_like(maxc)
     mask = delta != 0
@@ -636,18 +637,18 @@ with st.sidebar:
                     st.success(f"✅ {len(selected_colors)} Farben gewählt!")
                 else:
                     st.warning("⚠️ Wähle mindestens eine Farbe!")
-        # =================================================================
+        else:
+            # For demo images or when color detection is not available
+            dd = st.session_state.get("decompose_data")
+            if dd:
+                pl = dd.get("palette", []) or []
+                hl = dd.get("color_histogram", []) or []
             else:
-                dd = st.session_state.get("decompose_data")
-                if dd:
-                    pl = dd.get("palette", []) or []
-                    hl = dd.get("color_histogram", []) or []
-                else:
-                    pl = []
-                    hl = []
+                pl = []
+                hl = []
 
-            # Only proceed if we have a palette estimate
-            if pl:
+        # Only proceed if we have a palette estimate
+        if pl:
                 # Only auto-fill when there isn't already a demo preset palette
                 if not preset_palette:
                     DEFAULT_TOTAL_SUGGESTED_LINES = 10000
