@@ -678,9 +678,7 @@ with st.sidebar:
 
                     # also keep session_state in sync
                     st.session_state.decompose_data = {"palette": suggested_palette, "color_histogram": hl}
-        except Exception:
-            # don't break the UI if anything fails here
-            pass
+
         # =======================================================================================================
             # Prefill widgets from suggested palette/lines if they are not already set in session_state
         try:
