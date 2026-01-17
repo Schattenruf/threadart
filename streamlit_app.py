@@ -450,47 +450,62 @@ with st.sidebar:
                     palette_list.append((r, g, b))
                     hist_list.append(cnt / total_pixels)
             
-            # --- Merge ähnliche Farben zusammen und behalte nur starke Kontraste ---
+            # --- Wähle kontrastierende Farben aus (verhindert zu ähnliche Farben) ---
             def color_distance(c1, c2):
                 """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
                 return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
             
-            if palette_list:
-                # Minimum Distanz für zwei unterschiedliche Farben (höher = weniger Farben, mehr Kontrast)
-                MIN_COLOR_DISTANCE = 60  # Werte zwischen 40-80 sind sinnvoll
+            if palette_list and len(palette_list) > est_n_colors:
+                # Minimum Distanz zwischen ausgewählten Farben (niedriger = mehr Variation erlaubt)
+                MIN_COLOR_DISTANCE = 40  # Werte zwischen 30-60 sind sinnvoll
                 
-                merged_palette = []
-                merged_hist = []
+                # Sortiere erst nach Häufigkeit
+                sorted_pairs = sorted(zip(palette_list, hist_list), key=lambda x: x[1], reverse=True)
                 
-                for color, freq in zip(palette_list, hist_list):
-                    # Prüfe, ob diese Farbe zu einer bereits vorhandenen ähnlich ist
-                    merged = False
-                    for i, existing_color in enumerate(merged_palette):
+                # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
+                selected_palette = []
+                selected_hist = []
+                
+                for color, freq in sorted_pairs:
+                    # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
+                    is_distinct = True
+                    for existing_color in selected_palette:
                         if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
-                            # Merge: addiere Frequenz zur existierenden Farbe
-                            # Gewichte die Farbe nach Häufigkeit
-                            total_freq = merged_hist[i] + freq
-                            merged_palette[i] = tuple(
-                                int((existing_color[j] * merged_hist[i] + color[j] * freq) / total_freq)
-                                for j in range(3)
-                            )
-                            merged_hist[i] = total_freq
-                            merged = True
+                            is_distinct = False
                             break
                     
-                    if not merged:
-                        merged_palette.append(color)
-                        merged_hist.append(freq)
+                    if is_distinct:
+                        selected_palette.append(color)
+                        selected_hist.append(freq)
+                    else:
+                        # Addiere Häufigkeit zur ähnlichsten Farbe
+                        closest_idx = min(range(len(selected_palette)), 
+                                        key=lambda i: color_distance(color, selected_palette[i]))
+                        selected_hist[closest_idx] += freq
+                    
+                    # Stoppe, wenn wir genug Farben haben
+                    if len(selected_palette) >= est_n_colors:
+                        break
                 
-                # Sortiere nach Häufigkeit und nimm die Top est_n_colors
-                sorted_pairs = sorted(zip(merged_palette, merged_hist), key=lambda x: x[1], reverse=True)
-                palette_list = [p for p, h in sorted_pairs[:est_n_colors]]
-                hist_list = [h for p, h in sorted_pairs[:est_n_colors]]
+                # Falls wir zu wenig distinkte Farben gefunden haben, fülle auf
+                while len(selected_palette) < est_n_colors and len(sorted_pairs) > len(selected_palette):
+                    # Nimm einfach die nächste verfügbare Farbe
+                    for color, freq in sorted_pairs:
+                        if color not in selected_palette:
+                            selected_palette.append(color)
+                            selected_hist.append(freq)
+                            break
+                
+                palette_list = selected_palette[:est_n_colors]
+                hist_list = selected_hist[:est_n_colors]
                 
                 # Renormalisiere Histogramm
                 total = sum(hist_list)
                 if total > 0:
                     hist_list = [h / total for h in hist_list]
+            elif palette_list:
+                # Wenn wir schon weniger oder gleich est_n_colors haben, behalte alle
+                pass
             
             # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
             if not palette_list:
