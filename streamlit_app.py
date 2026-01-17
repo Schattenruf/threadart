@@ -431,13 +431,13 @@ with st.sidebar:
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
             img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-            # Quantisiere auf mehr Farben als gewünscht, damit wir dann mergen können
-            quant = img_small.quantize(colors=est_n_colors * 3, method=Image.MEDIANCUT)
+            # Quantisiere auf VIELE Farben, um alle Farbnuancen zu erfassen
+            quant = img_small.quantize(colors=min(256, est_n_colors * 10), method=Image.MEDIANCUT)
 
             # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=est_n_colors * 3)
-            palette_list = []
-            hist_list = []
+            colors_info = quant.getcolors(maxcolors=256)
+            all_colors = []
+            all_freqs = []
             if colors_info:
                 # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
                 flat_pal = quant.getpalette()
@@ -447,68 +447,86 @@ with st.sidebar:
                     r = flat_pal[idx * 3]
                     g = flat_pal[idx * 3 + 1]
                     b = flat_pal[idx * 3 + 2]
-                    palette_list.append((r, g, b))
-                    hist_list.append(cnt / total_pixels)
+                    all_colors.append((r, g, b))
+                    all_freqs.append(cnt / total_pixels)
             
-            # --- Wähle kontrastierende Farben aus mit adaptivem Schwellwert ---
-            def color_distance(c1, c2):
-                """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
-                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
+            # --- Spektrum-basierte Farbauswahl (HSV-Clustering) ---
+            import colorsys
             
-            if palette_list and len(palette_list) > est_n_colors:
-                # Sortiere erst nach Häufigkeit
-                sorted_pairs = sorted(zip(palette_list, hist_list), key=lambda x: x[1], reverse=True)
+            def rgb_to_hsv(rgb):
+                """Konvertiert RGB (0-255) zu HSV (H: 0-360, S: 0-1, V: 0-1)"""
+                r, g, b = rgb[0]/255, rgb[1]/255, rgb[2]/255
+                h, s, v = colorsys.rgb_to_hsv(r, g, b)
+                return (h * 360, s, v)  # Hue in Grad
+            
+            def hsv_distance(hsv1, hsv2):
+                """Berechnet Distanz zwischen zwei HSV-Farben (Hue-gewichtet)"""
+                # Hue ist zyklisch (0° = 360°), daher spezielle Behandlung
+                h_diff = min(abs(hsv1[0] - hsv2[0]), 360 - abs(hsv1[0] - hsv2[0]))
+                # Gewichte: Hue am wichtigsten für Diversität, dann Saturation, dann Value
+                return (h_diff * 2.0)**2 + (abs(hsv1[1] - hsv2[1]) * 100)**2 + (abs(hsv1[2] - hsv2[2]) * 50)**2
+            
+            if all_colors and len(all_colors) >= est_n_colors:
+                # Konvertiere alle Farben zu HSV
+                colors_hsv = [rgb_to_hsv(c) for c in all_colors]
                 
-                # Adaptive Strategie: Versuche mit verschiedenen Distanzen, bis wir genug Farben haben
-                for MIN_COLOR_DISTANCE in [50, 40, 30, 20, 10]:
-                    selected_palette = []
-                    selected_hist = []
+                # Clustering: Wähle est_n_colors Farben, die maximal divers im HSV-Raum sind
+                # Starte mit der häufigsten Farbe
+                sorted_by_freq = sorted(zip(all_colors, all_freqs, colors_hsv), key=lambda x: x[1], reverse=True)
+                
+                selected_colors = [sorted_by_freq[0][0]]  # RGB
+                selected_freqs = [sorted_by_freq[0][1]]
+                selected_hsv = [sorted_by_freq[0][2]]
+                
+                # Iterativ: Wähle die Farbe, die am weitesten von bereits gewählten entfernt ist
+                # aber auch einigermaßen häufig vorkommt (Kompromiss zwischen Diversität und Relevanz)
+                remaining = sorted_by_freq[1:]
+                
+                while len(selected_colors) < est_n_colors and remaining:
+                    # Berechne für jede verbleibende Farbe: min. Distanz zu gewählten Farben
+                    # gewichtet mit ihrer Häufigkeit
+                    best_score = -1
+                    best_idx = 0
                     
-                    # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
-                    for color, freq in sorted_pairs:
-                        # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
-                        is_distinct = True
-                        for existing_color in selected_palette:
-                            if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
-                                is_distinct = False
-                                break
+                    for idx, (rgb, freq, hsv) in enumerate(remaining):
+                        # Min. Distanz zu allen bereits gewählten Farben
+                        min_dist = min(hsv_distance(hsv, sel_hsv) for sel_hsv in selected_hsv)
+                        # Score: Balance zwischen Diversität (min_dist) und Häufigkeit (freq)
+                        # Höhere Frequenz = mehr Gewicht (logarithmisch, um sehr seltene nicht zu ignorieren)
+                        score = min_dist * (1 + freq * 10)  # Frequenz-Boost
                         
-                        if is_distinct:
-                            selected_palette.append(color)
-                            selected_hist.append(freq)
-                        else:
-                            # Addiere Häufigkeit zur ähnlichsten Farbe
-                            if selected_palette:
-                                closest_idx = min(range(len(selected_palette)), 
-                                                key=lambda i: color_distance(color, selected_palette[i]))
-                                selected_hist[closest_idx] += freq
-                        
-                        # Stoppe, wenn wir genug Farben haben
-                        if len(selected_palette) >= est_n_colors:
-                            break
+                        if score > best_score:
+                            best_score = score
+                            best_idx = idx
                     
-                    # Wenn wir genug Farben gefunden haben, breche ab
-                    if len(selected_palette) >= est_n_colors:
-                        break
+                    # Füge beste Farbe hinzu
+                    best = remaining.pop(best_idx)
+                    selected_colors.append(best[0])
+                    selected_freqs.append(best[1])
+                    selected_hsv.append(best[2])
                 
-                # Falls immer noch zu wenig, füge einfach die nächsten Farben hinzu
-                for color, freq in sorted_pairs:
-                    if len(selected_palette) >= est_n_colors:
-                        break
-                    if color not in selected_palette:
-                        selected_palette.append(color)
-                        selected_hist.append(freq)
+                # Sammle ähnliche Farben zu den gewählten und addiere ihre Frequenzen
+                final_freqs = list(selected_freqs)
+                for rgb, freq, hsv in remaining:
+                    # Finde nächste gewählte Farbe
+                    closest_idx = min(range(len(selected_hsv)), 
+                                    key=lambda i: hsv_distance(hsv, selected_hsv[i]))
+                    final_freqs[closest_idx] += freq
                 
-                palette_list = selected_palette[:est_n_colors]
-                hist_list = selected_hist[:est_n_colors]
+                palette_list = selected_colors
+                hist_list = final_freqs
                 
-                # Renormalisiere Histogramm
+                # Renormalisiere
                 total = sum(hist_list)
                 if total > 0:
                     hist_list = [h / total for h in hist_list]
-            elif palette_list:
+            elif all_colors:
                 # Wenn wir schon weniger oder gleich est_n_colors haben, behalte alle
-                pass
+                palette_list = all_colors
+                hist_list = all_freqs
+            else:
+                palette_list = []
+                hist_list = []
             
             # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
             if not palette_list:
