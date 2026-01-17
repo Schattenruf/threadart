@@ -512,11 +512,80 @@ with st.sidebar:
                 palette_list = [(128, 128, 128)] * est_n_colors
                 hist_list = [1.0 / est_n_colors] * est_n_colors
 
-            # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
+            # Speichere ALLE gefundenen Farben in session_state (nicht gefiltert!)
+            st.session_state.found_colors_raw = palette_list
+            st.session_state.found_colors_hist = hist_list
+            
+            # Initiales decompose_data (wird später überschrieben wenn User Farben auswählt)
             st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
         except Exception:
             st.session_state.decompose_data = None
+            st.session_state.found_colors_raw = []
+            st.session_state.found_colors_hist = []
         # -----------------------------------------------------------------
+        
+        # ======= Zeige ALLE gefundenen Farben mit Checkboxen für User-Auswahl =======
+        st.subheader("🎨 Gefundene Farben - Wähle aus, welche du haben möchtest:")
+        
+        if st.session_state.get("found_colors_raw") and st.session_state.get("found_colors_hist"):
+            found_colors = st.session_state.found_colors_raw
+            found_hist = st.session_state.found_colors_hist
+            
+            # Initialisiere Checkboxen-State falls noch nicht vorhanden
+            if "color_selections" not in st.session_state:
+                st.session_state.color_selections = [True] * len(found_colors)  # Standardmäßig alle gewählt
+            
+            # Zeige Farben in Columns mit Checkboxen
+            cols_per_row = 5
+            for row_idx in range(0, len(found_colors), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for col_idx, col in enumerate(cols):
+                    color_idx = row_idx + col_idx
+                    if color_idx >= len(found_colors):
+                        break
+                    
+                    color = found_colors[color_idx]
+                    freq = found_hist[color_idx]
+                    
+                    with col:
+                        # Checkbox für diese Farbe
+                        selected = st.checkbox(
+                            f"RGB{color}",
+                            value=st.session_state.color_selections[color_idx],
+                            key=f"color_select_{color_idx}",
+                            help=f"Häufigkeit: {freq:.1%}"
+                        )
+                        st.session_state.color_selections[color_idx] = selected
+                        
+                        # Zeige Farbswatch
+                        hex_color = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+                        st.markdown(
+                            f'<div style="background-color: {hex_color}; height: 40px; border-radius: 5px;"></div>',
+                            unsafe_allow_html=True
+                        )
+                        st.caption(f"{freq:.1%}")
+            
+            # Button zum Generieren des Vorschlags basierend auf Auswahl
+            if st.button("✨ Vorschlag generieren aus Auswahl"):
+                # Sammle ausgewählte Farben
+                selected_colors = [found_colors[i] for i in range(len(found_colors)) if st.session_state.color_selections[i]]
+                selected_hist = [found_hist[i] for i in range(len(found_hist)) if st.session_state.color_selections[i]]
+                
+                if selected_colors:
+                    # Renormalisiere Histogramm
+                    total = sum(selected_hist)
+                    if total > 0:
+                        selected_hist = [h / total for h in selected_hist]
+                    
+                    # Speichere die ausgewählten Farben als neue Palette
+                    st.session_state.decompose_data = {
+                        "palette": selected_colors,
+                        "color_histogram": selected_hist
+                    }
+                    st.success(f"✅ {len(selected_colors)} Farben ausgewählt! Scrollen Sie nach unten zum Anpassen.")
+                else:
+                    st.warning("⚠️ Bitte wählen Sie mindestens eine Farbe aus!")
+        # ===============================================
 
         # ======= Add automatic UI suggestions based on quantize result (insert after quantize try/except) =======
         try:
