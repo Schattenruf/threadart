@@ -647,38 +647,38 @@ with st.sidebar:
                 pl = []
                 hl = []
 
-        # Only proceed if we have a palette estimate
-        if pl:
-                # Only auto-fill when there isn't already a demo preset palette
-                if not preset_palette:
-                    DEFAULT_TOTAL_SUGGESTED_LINES = 10000
+            # Only proceed if we have a palette estimate
+            if pl:
+                    # Only auto-fill when there isn't already a demo preset palette
+                    if not preset_palette:
+                        DEFAULT_TOTAL_SUGGESTED_LINES = 10000
 
-                    # normalize palette items to tuples of ints
-                    suggested_palette = [tuple(map(int, c)) for c in pl]
+                        # normalize palette items to tuples of ints
+                        suggested_palette = [tuple(map(int, c)) for c in pl]
 
-                    # compute suggested lines; avoid zeros
-                    suggested_lines = [max(100, int(h * DEFAULT_TOTAL_SUGGESTED_LINES)) for h in hl]
+                        # compute suggested lines; avoid zeros
+                        suggested_lines = [max(100, int(h * DEFAULT_TOTAL_SUGGESTED_LINES)) for h in hl]
 
-                    # fix rounding remainder by adding to the darkest color (same heuristic as elsewhere)
-                    remainder = DEFAULT_TOTAL_SUGGESTED_LINES - sum(suggested_lines)
-                    if remainder != 0:
-                        try:
-                            sums = [sum(c) for c in suggested_palette]
-                            darkest_idx = sums.index(max(sums))
-                        except Exception:
-                            darkest_idx = 0
-                        suggested_lines[darkest_idx] += remainder
+                        # fix rounding remainder by adding to the darkest color (same heuristic as elsewhere)
+                        remainder = DEFAULT_TOTAL_SUGGESTED_LINES - sum(suggested_lines)
+                        if remainder != 0:
+                            try:
+                                sums = [sum(c) for c in suggested_palette]
+                                darkest_idx = sums.index(max(sums))
+                            except Exception:
+                                darkest_idx = 0
+                            suggested_lines[darkest_idx] += remainder
 
-                    # default darkness values (adjust if you want heuristics here)
-                    suggested_darkness = [0.17] * len(suggested_palette)
+                        # default darkness values (adjust if you want heuristics here)
+                        suggested_darkness = [0.17] * len(suggested_palette)
 
-                    # set local preset_* variables used later to render the UI
-                    preset_palette = suggested_palette
-                    preset_lines = suggested_lines
-                    preset_darkness = suggested_darkness
+                        # set local preset_* variables used later to render the UI
+                        preset_palette = suggested_palette
+                        preset_lines = suggested_lines
+                        preset_darkness = suggested_darkness
 
-                    # also keep session_state in sync
-                    st.session_state.decompose_data = {"palette": suggested_palette, "color_histogram": hl}
+                        # also keep session_state in sync
+                        st.session_state.decompose_data = {"palette": suggested_palette, "color_histogram": hl}
 
         # =======================================================================================================
             # Prefill widgets from suggested palette/lines if they are not already set in session_state
