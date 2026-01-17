@@ -431,13 +431,13 @@ with st.sidebar:
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
             img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-            # Quantisiere auf MEHR Farben, um auch seltene Farben wie grüne Augen zu erfassen
-            quant = img_small.quantize(colors=min(128, est_n_colors * 20), method=Image.MEDIANCUT)
+            # Quantisiere auf mehr Farben als gewünscht, damit wir dann mergen können
+            quant = img_small.quantize(colors=est_n_colors * 3, method=Image.MEDIANCUT)
 
             # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=128)
-            all_colors = []
-            all_freqs = []
+            colors_info = quant.getcolors(maxcolors=est_n_colors * 3)
+            palette_list = []
+            hist_list = []
             if colors_info:
                 # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
                 flat_pal = quant.getpalette()
@@ -447,78 +447,65 @@ with st.sidebar:
                     r = flat_pal[idx * 3]
                     g = flat_pal[idx * 3 + 1]
                     b = flat_pal[idx * 3 + 2]
-                    all_colors.append((r, g, b))
-                    all_freqs.append(cnt / total_pixels)
+                    palette_list.append((r, g, b))
+                    hist_list.append(cnt / total_pixels)
             
-            # --- K-Means Clustering: Finde est_n_colors diverse repräsentative Farben ---
-            if all_colors and len(all_colors) > 0:
-                try:
-                    from sklearn.cluster import KMeans
-                    import numpy as np
+            # --- Wähle kontrastierende Farben aus (verhindert zu ähnliche Farben) ---
+            def color_distance(c1, c2):
+                """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
+                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
+            
+            if palette_list and len(palette_list) > est_n_colors:
+                # Minimum Distanz zwischen ausgewählten Farben (niedriger = mehr Variation erlaubt)
+                MIN_COLOR_DISTANCE = 40  # Werte zwischen 30-60 sind sinnvoll
+                
+                # Sortiere erst nach Häufigkeit
+                sorted_pairs = sorted(zip(palette_list, hist_list), key=lambda x: x[1], reverse=True)
+                
+                # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
+                selected_palette = []
+                selected_hist = []
+                
+                for color, freq in sorted_pairs:
+                    # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
+                    is_distinct = True
+                    for existing_color in selected_palette:
+                        if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
+                            is_distinct = False
+                            break
                     
-                    # Konvertiere zu Array für K-Means
-                    colors_array = np.array(all_colors, dtype=np.float32)
-                    freqs_array = np.array(all_freqs, dtype=np.float32)
+                    if is_distinct:
+                        selected_palette.append(color)
+                        selected_hist.append(freq)
+                    else:
+                        # Addiere Häufigkeit zur ähnlichsten Farbe
+                        closest_idx = min(range(len(selected_palette)), 
+                                        key=lambda i: color_distance(color, selected_palette[i]))
+                        selected_hist[closest_idx] += freq
                     
-                    # K-Means mit est_n_colors Clustern
-                    kmeans = KMeans(n_clusters=min(est_n_colors, len(all_colors)), random_state=42, n_init=10)
-                    labels = kmeans.fit_predict(colors_array)
-                    centers = kmeans.cluster_centers_.astype(int)
-                    
-                    # Berechne Häufigkeit pro Cluster
-                    cluster_freqs = []
-                    for i in range(len(centers)):
-                        mask = labels == i
-                        cluster_freqs.append(np.sum(freqs_array[mask]))
-                    
-                    # Greedy-Selektion: Wähle die diversesten Cluster-Centers
-                    def color_dist(c1, c2):
-                        return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
-                    
-                    selected_indices = []
-                    selected_centers = []
-                    remaining = list(range(len(centers)))
-                    
-                    # Starte mit häufigster Farbe
-                    start_idx = max(range(len(centers)), key=lambda i: cluster_freqs[i])
-                    selected_indices.append(start_idx)
-                    selected_centers.append(centers[start_idx])
-                    remaining.remove(start_idx)
-                    
-                    # Greedy: Nimm immer die mit max. Mindestabstand zu bisherigen
-                    while len(selected_indices) < est_n_colors and remaining:
-                        best_rem_idx = 0
-                        best_min_dist = -1
-                        
-                        for rem_i, idx in enumerate(remaining):
-                            min_dist_to_selected = min(color_dist(centers[idx], c) for c in selected_centers)
-                            if min_dist_to_selected > best_min_dist:
-                                best_min_dist = min_dist_to_selected
-                                best_rem_idx = rem_i
-                        
-                        idx = remaining.pop(best_rem_idx)
-                        selected_indices.append(idx)
-                        selected_centers.append(centers[idx])
-                    
-                    # Baue finale Palette
-                    palette_list = [tuple(centers[i]) for i in selected_indices]
-                    hist_list = [cluster_freqs[i] for i in selected_indices]
-                    
-                    # Renormalisiere
-                    total = sum(hist_list)
-                    if total > 0:
-                        hist_list = [h / total for h in hist_list]
-                    
-                    st.write(f"🔍 K-Means + Diversity-Greedy: {len(palette_list)} diverse Farben gefunden!")
-                    
-                except ImportError:
-                    # Fallback ohne sklearn: Nutze quantize mit höherer Auflösung
-                    st.write("⚠️ sklearn nicht verfügbar, nutze Fallback-Quantisierung...")
-                    palette_list = []
-                    hist_list = []
-            else:
-                palette_list = []
-                hist_list = []
+                    # Stoppe, wenn wir genug Farben haben
+                    if len(selected_palette) >= est_n_colors:
+                        break
+                
+                # Falls wir zu wenig distinkte Farben gefunden haben, fülle auf
+                while len(selected_palette) < est_n_colors and len(sorted_pairs) > len(selected_palette):
+                    # Nimm einfach die nächste verfügbare Farbe
+                    for color, freq in sorted_pairs:
+                        if color not in selected_palette:
+                            selected_palette.append(color)
+                            selected_hist.append(freq)
+                            break
+                
+                palette_list = selected_palette[:est_n_colors]
+                hist_list = selected_hist[:est_n_colors]
+                
+                # Renormalisiere Histogramm
+                total = sum(hist_list)
+                if total > 0:
+                    hist_list = [h / total for h in hist_list]
+            elif palette_list:
+                # Wenn wir schon weniger oder gleich est_n_colors haben, behalte alle
+                pass
             
             # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
             if not palette_list:
@@ -567,21 +554,6 @@ with st.sidebar:
                         except Exception:
                             darkest_idx = 0
                         suggested_lines[darkest_idx] += remainder
-                    
-                    # Normalisiere auf max 15000 pro Farbe (UI-Limit)
-                    max_lines = max(suggested_lines) if suggested_lines else 1000
-                    if max_lines > 15000:
-                        scale_factor = 15000 / max_lines
-                        suggested_lines = [max(100, int(l * scale_factor)) for l in suggested_lines]
-                        # Fix rounding again
-                        remainder = DEFAULT_TOTAL_SUGGESTED_LINES - sum(suggested_lines)
-                        if remainder != 0:
-                            try:
-                                sums = [sum(c) for c in suggested_palette]
-                                darkest_idx = sums.index(max(sums))
-                            except Exception:
-                                darkest_idx = 0
-                            suggested_lines[darkest_idx] += remainder
 
                     # default darkness values (adjust if you want heuristics here)
                     suggested_darkness = [0.17] * len(suggested_palette)
