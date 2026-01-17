@@ -581,62 +581,6 @@ with st.sidebar:
             st.session_state.all_found_colors = []
             st.session_state.color_checkbox_states = []
         
-        # === Display color selection UI ===
-        st.subheader("🎨 Gefundene Farben - Wähle aus, welche du möchtest:")
-        
-        if st.session_state.get("all_found_colors"):
-            cols_per_row = 5
-            for row_idx in range(0, len(st.session_state.all_found_colors), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for col_idx, col in enumerate(cols):
-                    color_idx = row_idx + col_idx
-                    if color_idx >= len(st.session_state.all_found_colors):
-                        break
-                    
-                    category, color_info = st.session_state.all_found_colors[color_idx]
-                    hex_color = color_info['hex']
-                    percent = color_info['percent']
-                    
-                    with col:
-                        # Checkbox
-                        selected = st.checkbox(
-                            f"{category}\n{hex_color}",
-                            value=st.session_state.color_checkbox_states[color_idx],
-                            key=f"color_select_{color_idx}",
-                            help=f"Anteil: {percent:.1%}"
-                        )
-                        st.session_state.color_checkbox_states[color_idx] = selected
-                        
-                        # Color swatch
-                        st.markdown(
-                            f'<div style="background-color: {hex_color}; height: 50px; border-radius: 5px; border: 2px solid #ccc;"></div>',
-                            unsafe_allow_html=True
-                        )
-                        st.caption(f"{percent:.1%}")
-            
-            # Button zum generieren
-            if st.button("✨ Vorschlag generieren"):
-                selected_colors = []
-                selected_hists = []
-                
-                for color_idx, (category, color_info) in enumerate(st.session_state.all_found_colors):
-                    if st.session_state.color_checkbox_states[color_idx]:
-                        selected_colors.append(color_info['rgb'])
-                        selected_hists.append(color_info['percent'])
-                
-                if selected_colors:
-                    # Normalize
-                    total = sum(selected_hists)
-                    if total > 0:
-                        selected_hists = [h / total for h in selected_hists]
-                    
-                    st.session_state.decompose_data = {
-                        "palette": selected_colors,
-                        "color_histogram": selected_hists
-                    }
-                    st.success(f"✅ {len(selected_colors)} Farben gewählt!")
-                else:
-                    st.warning("⚠️ Wähle mindestens eine Farbe!")
         else:
             # For demo images or when color detection is not available
             dd = st.session_state.get("decompose_data")
@@ -989,6 +933,62 @@ if st.session_state.generated_html:
     b64_html = base64.b64encode(st.session_state.generated_html.encode()).decode()
     href_html = f'<a href="data:text/html;base64,{b64_html}" download="{name}.html">Download HTML File</a>'
     st.markdown(href_html, unsafe_allow_html=True)
+# === Gefundene Farben - Ausklappbarer Bereich (nur bei Custom Upload) ===
+if st.session_state.get("all_found_colors"):
+    with st.expander("🎨 Gefundene Farben - Wähle aus, welche du möchtest:", expanded=True):
+        cols_per_row = 5
+        for row_idx in range(0, len(st.session_state.all_found_colors), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for col_idx, col in enumerate(cols):
+                color_idx = row_idx + col_idx
+                if color_idx >= len(st.session_state.all_found_colors):
+                    break
+                
+                category, color_info = st.session_state.all_found_colors[color_idx]
+                hex_color = color_info['hex']
+                percent = color_info['percent']
+                
+                with col:
+                    # Checkbox
+                    selected = st.checkbox(
+                        f"{category}\n{hex_color}",
+                        value=st.session_state.color_checkbox_states[color_idx],
+                        key=f"color_select_{color_idx}",
+                        help=f"Anteil: {percent:.1%}"
+                    )
+                    st.session_state.color_checkbox_states[color_idx] = selected
+                    
+                    # Color swatch
+                    st.markdown(
+                        f'<div style="background-color: {hex_color}; height: 50px; border-radius: 5px; border: 2px solid #ccc;"></div>',
+                        unsafe_allow_html=True
+                    )
+                    st.caption(f"{percent:.1%}")
+        
+        # Button zum generieren
+        if st.button("✨ Vorschlag generieren"):
+            selected_colors = []
+            selected_hists = []
+            
+            for color_idx, (category, color_info) in enumerate(st.session_state.all_found_colors):
+                if st.session_state.color_checkbox_states[color_idx]:
+                    selected_colors.append(color_info['rgb'])
+                    selected_hists.append(color_info['percent'])
+            
+            if selected_colors:
+                # Normalize
+                total = sum(selected_hists)
+                if total > 0:
+                    selected_hists = [h / total for h in selected_hists]
+                
+                st.session_state.decompose_data = {
+                    "palette": selected_colors,
+                    "color_histogram": selected_hists
+                }
+                st.success(f"✅ {len(selected_colors)} Farben gewählt!")
+            else:
+                st.warning("⚠️ Wähle mindestens eine Farbe!")
+
 # Vorschlag / Button für Linienverteilung (immer sichtbar, mit Fallback)
 st.subheader("Vorgeschlagene Linienverteilung")
 
