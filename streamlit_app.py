@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PIL import Image
+import numpy as np
+from sklearn.cluster import KMeans
 
 import streamlit as st
 
@@ -39,6 +41,128 @@ gc.collect()
 
 from image_color import Img, ThreadArtColorParams
 from streamlit.components.v1 import html as st_html
+
+# ===== HSV-basierte Farberkennung (aus color_extractor.py) =====
+def rgb_to_hsv(img_rgb):
+    """Vectorized RGB->HSV conversion. Input uint8 RGB image, returns H,S,V in [0,1]."""
+    arr = img_rgb.astype('float32') / 255.0
+    r = arr[..., 0]
+    g = arr[..., 1]
+    b = arr[..., 2]
+    maxc = np.max(arr, axis=-1)
+    minc = np.min(arr, axis=-1)
+    v = maxc
+    delta = maxc - minc
+    s = np.where(maxc == 0, 0, delta / maxc)
+
+    h = np.zeros_like(maxc)
+    mask = delta != 0
+    # Where max is r
+    idx = (maxc == r) & mask
+    h[idx] = ( (g[idx] - b[idx]) / delta[idx] ) % 6
+    # Where max is g
+    idx = (maxc == g) & mask
+    h[idx] = ( (b[idx] - r[idx]) / delta[idx] ) + 2
+    # Where max is b
+    idx = (maxc == b) & mask
+    h[idx] = ( (r[idx] - g[idx]) / delta[idx] ) + 4
+
+    h = h / 6.0  # now in [0,1]
+    h[~mask] = 0.0
+    hsv = np.stack([h, s, v], axis=-1)
+    return hsv
+
+def hue_in_ranges(hue_array, ranges_deg):
+    """hue_array in [0,1]. ranges_deg is list of (min_deg, max_deg) - may include negative for wrap."""
+    h_deg = (hue_array * 360.0) % 360.0
+    mask = np.zeros(h_deg.shape, dtype=bool)
+    for (mn, mx) in ranges_deg:
+        mn_norm = mn % 360
+        mx_norm = mx % 360
+        if mn_norm <= mx_norm:
+            mask |= (h_deg >= mn_norm) & (h_deg <= mx_norm)
+        else:
+            mask |= (h_deg >= mn_norm) | (h_deg <= mx_norm)
+    return mask
+
+def get_top_colors_kmeans(pixels_rgb, top_n=3):
+    """Extract top N colors from pixels using KMeans"""
+    if len(pixels_rgb) == 0:
+        return []
+    # Limit sample size
+    max_pixels = 100000
+    n_samples = min(len(pixels_rgb), max_pixels)
+    if len(pixels_rgb) > n_samples:
+        idx = np.random.choice(len(pixels_rgb), n_samples, replace=False)
+        sample = pixels_rgb[idx]
+    else:
+        sample = pixels_rgb
+
+    k = min(top_n, len(sample))
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    kmeans.fit(sample)
+    centers = np.clip(kmeans.cluster_centers_.astype(int), 0, 255)
+    labels = kmeans.predict(pixels_rgb)
+    results = []
+    total = len(pixels_rgb)
+    for i, center in enumerate(centers):
+        cnt = int((labels == i).sum())
+        percent = cnt / total
+        hexcol = '#{:02x}{:02x}{:02x}'.format(int(center[0]), int(center[1]), int(center[2]))
+        results.append({'hex': hexcol, 'percent': percent, 'rgb': tuple(center)})
+    results.sort(key=lambda x: x['percent'], reverse=True)
+    return results
+
+def extract_colors_hsv(image_pil):
+    """Extract colors from image using HSV-based categorization"""
+    # Resize if too large
+    arr = np.array(image_pil.convert('RGB'))
+    H, W = arr.shape[:2]
+    max_side = 1000
+    if max(H, W) > max_side:
+        scale = max_side / max(H, W)
+        image_pil = image_pil.resize((int(W*scale), int(H*scale)), Image.LANCZOS)
+    
+    arr = np.array(image_pil.convert('RGB'))
+    pixels = arr.reshape(-1, 3)
+    hsv = rgb_to_hsv(arr).reshape(-1, 3)
+    h = hsv[:, 0]
+    s = hsv[:, 1]
+    v = hsv[:, 2]
+
+    # Thresholds
+    BLACK_V_THRESHOLD = 0.15
+    WHITE_V_THRESHOLD = 0.92
+    WHITE_S_THRESHOLD = 0.18
+    MIN_SAT = 0.12
+
+    # Black & white
+    black_mask = v <= BLACK_V_THRESHOLD
+    white_mask = (v >= WHITE_V_THRESHOLD) & (s <= WHITE_S_THRESHOLD)
+    black_pct = black_mask.mean()
+    white_pct = white_mask.mean()
+
+    # Colored pixels
+    non_grey_mask = ~(black_mask | white_mask)
+
+    # Hue ranges
+    red_mask = hue_in_ranges(h, [(-20, 20)]) & non_grey_mask & (s >= MIN_SAT)
+    green_mask = hue_in_ranges(h, [(60, 170)]) & non_grey_mask & (s >= MIN_SAT)
+    blue_mask = hue_in_ranges(h, [(200, 280)]) & non_grey_mask & (s >= MIN_SAT)
+
+    def gather(mask, top_n=5):
+        pixels_sel = pixels[mask]
+        return get_top_colors_kmeans(pixels_sel, top_n=top_n)
+
+    results = {
+        'black': ({'hex': '#000000', 'percent': black_pct, 'rgb': (0, 0, 0)} if black_pct > 0.01 else None),
+        'white': ({'hex': '#ffffff', 'percent': white_pct, 'rgb': (255, 255, 255)} if white_pct > 0.01 else None),
+        'red': gather(red_mask),
+        'green': gather(green_mask),
+        'blue': gather(blue_mask),
+    }
+    return results
+
 # --- Neue Hilfsfunktion: decompose_image (angepasst für Streamlit) ---
 def decompose_image(img_obj, n_lines_total=10000):
     """
@@ -423,107 +547,96 @@ with st.sidebar:
             image,
             width='stretch',
         )
-        # --- Schnell-Histogramm erzeugen, sobald ein Bild ausgewählt wurde ---
+        
+        # === Neue HSV-basierte Farberkennung mit Checkbox-Selection ===
         try:
-            est_n_colors = st.session_state.get("num_colors_input", len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3)
-            # Verkleinern für Geschwindigkeit
-            thumb_w = 200
-            thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
-            img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
-
-            # Quantisiere auf mehr Farben als gewünscht, damit wir dann mergen können
-            quant = img_small.quantize(colors=est_n_colors * 3, method=Image.MEDIANCUT)
-
-            # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=est_n_colors * 3)
-            palette_list = []
-            hist_list = []
-            if colors_info:
-                # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
-                flat_pal = quant.getpalette()
-                total_pixels = sum(cnt for cnt, idx in colors_info)
-                for cnt, idx in colors_info:
-                    # Index im Palette-Array
-                    r = flat_pal[idx * 3]
-                    g = flat_pal[idx * 3 + 1]
-                    b = flat_pal[idx * 3 + 2]
-                    palette_list.append((r, g, b))
-                    hist_list.append(cnt / total_pixels)
+            hsv_colors = extract_colors_hsv(image)
             
-            # --- Wähle kontrastierende Farben aus (verhindert zu ähnliche Farben) ---
-            def color_distance(c1, c2):
-                """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
-                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
+            # Flatten all colors into one list with category info
+            all_found_colors = []
             
-            if palette_list and len(palette_list) > est_n_colors:
-                # Minimum Distanz zwischen ausgewählten Farben (niedriger = mehr Variation erlaubt)
-                MIN_COLOR_DISTANCE = 40  # Werte zwischen 30-60 sind sinnvoll
+            # Add black & white if present
+            if hsv_colors['black']:
+                all_found_colors.append(('Schwarz', hsv_colors['black']))
+            if hsv_colors['white']:
+                all_found_colors.append(('Weiß', hsv_colors['white']))
+            
+            # Add colored categories
+            for color_info in hsv_colors['red']:
+                all_found_colors.append(('Rot', color_info))
+            for color_info in hsv_colors['green']:
+                all_found_colors.append(('Grün', color_info))
+            for color_info in hsv_colors['blue']:
+                all_found_colors.append(('Blau', color_info))
+            
+            # Store in session state
+            st.session_state.all_found_colors = all_found_colors
+            
+            # Initialize checkbox states
+            if "color_checkbox_states" not in st.session_state:
+                st.session_state.color_checkbox_states = [True] * len(all_found_colors)
                 
-                # Sortiere erst nach Häufigkeit
-                sorted_pairs = sorted(zip(palette_list, hist_list), key=lambda x: x[1], reverse=True)
-                
-                # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
-                selected_palette = []
-                selected_hist = []
-                
-                for color, freq in sorted_pairs:
-                    # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
-                    is_distinct = True
-                    for existing_color in selected_palette:
-                        if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
-                            is_distinct = False
-                            break
-                    
-                    if is_distinct:
-                        selected_palette.append(color)
-                        selected_hist.append(freq)
-                    else:
-                        # Addiere Häufigkeit zur ähnlichsten Farbe
-                        closest_idx = min(range(len(selected_palette)), 
-                                        key=lambda i: color_distance(color, selected_palette[i]))
-                        selected_hist[closest_idx] += freq
-                    
-                    # Stoppe, wenn wir genug Farben haben
-                    if len(selected_palette) >= est_n_colors:
+        except Exception as e:
+            st.session_state.all_found_colors = []
+            st.session_state.color_checkbox_states = []
+        
+        # === Display color selection UI ===
+        st.subheader("🎨 Gefundene Farben - Wähle aus, welche du möchtest:")
+        
+        if st.session_state.get("all_found_colors"):
+            cols_per_row = 5
+            for row_idx in range(0, len(st.session_state.all_found_colors), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for col_idx, col in enumerate(cols):
+                    color_idx = row_idx + col_idx
+                    if color_idx >= len(st.session_state.all_found_colors):
                         break
-                
-                # Falls wir zu wenig distinkte Farben gefunden haben, fülle auf
-                while len(selected_palette) < est_n_colors and len(sorted_pairs) > len(selected_palette):
-                    # Nimm einfach die nächste verfügbare Farbe
-                    for color, freq in sorted_pairs:
-                        if color not in selected_palette:
-                            selected_palette.append(color)
-                            selected_hist.append(freq)
-                            break
-                
-                palette_list = selected_palette[:est_n_colors]
-                hist_list = selected_hist[:est_n_colors]
-                
-                # Renormalisiere Histogramm
-                total = sum(hist_list)
-                if total > 0:
-                    hist_list = [h / total for h in hist_list]
-            elif palette_list:
-                # Wenn wir schon weniger oder gleich est_n_colors haben, behalte alle
-                pass
+                    
+                    category, color_info = st.session_state.all_found_colors[color_idx]
+                    hex_color = color_info['hex']
+                    percent = color_info['percent']
+                    
+                    with col:
+                        # Checkbox
+                        selected = st.checkbox(
+                            f"{category}\n{hex_color}",
+                            value=st.session_state.color_checkbox_states[color_idx],
+                            key=f"color_select_{color_idx}",
+                            help=f"Anteil: {percent:.1%}"
+                        )
+                        st.session_state.color_checkbox_states[color_idx] = selected
+                        
+                        # Color swatch
+                        st.markdown(
+                            f'<div style="background-color: {hex_color}; height: 50px; border-radius: 5px; border: 2px solid #ccc;"></div>',
+                            unsafe_allow_html=True
+                        )
+                        st.caption(f"{percent:.1%}")
             
-            # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
-            if not palette_list:
-                palette_list = [(128, 128, 128)] * est_n_colors
-                hist_list = [1.0 / est_n_colors] * est_n_colors
-
-            # Speichere die Schätzung in session_state, damit der Decompose-Button sie nutzen kann
-            st.session_state.decompose_data = {"palette": palette_list, "color_histogram": hist_list}
-        except Exception:
-            st.session_state.decompose_data = None
-        # -----------------------------------------------------------------
-
-        # ======= Add automatic UI suggestions based on quantize result (insert after quantize try/except) =======
-        try:
-            # get palette/hist from locals (quantize) or from session_state fallback
-            if "palette_list" in locals() and "hist_list" in locals():
-                pl = palette_list
-                hl = hist_list
+            # Button zum generieren
+            if st.button("✨ Vorschlag generieren"):
+                selected_colors = []
+                selected_hists = []
+                
+                for color_idx, (category, color_info) in enumerate(st.session_state.all_found_colors):
+                    if st.session_state.color_checkbox_states[color_idx]:
+                        selected_colors.append(color_info['rgb'])
+                        selected_hists.append(color_info['percent'])
+                
+                if selected_colors:
+                    # Normalize
+                    total = sum(selected_hists)
+                    if total > 0:
+                        selected_hists = [h / total for h in selected_hists]
+                    
+                    st.session_state.decompose_data = {
+                        "palette": selected_colors,
+                        "color_histogram": selected_hists
+                    }
+                    st.success(f"✅ {len(selected_colors)} Farben gewählt!")
+                else:
+                    st.warning("⚠️ Wähle mindestens eine Farbe!")
+        # =================================================================
             else:
                 dd = st.session_state.get("decompose_data")
                 if dd:
