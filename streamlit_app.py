@@ -431,11 +431,11 @@ with st.sidebar:
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
             img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-            # Quantisiere auf VIELE Farben, um das gesamte Spektrum zu erfassen
-            quant = img_small.quantize(colors=min(100, est_n_colors * 15), method=Image.MEDIANCUT)
+            # Quantisiere auf viele Farben, um Diversität zu erfassen
+            quant = img_small.quantize(colors=min(50, est_n_colors * 10), method=Image.MEDIANCUT)
 
             # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=100)
+            colors_info = quant.getcolors(maxcolors=50)
             all_colors = []
             all_freqs = []
             if colors_info:
@@ -450,56 +450,92 @@ with st.sidebar:
                     all_colors.append((r, g, b))
                     all_freqs.append(cnt / total_pixels)
             
-            # --- Maximaler Kontrast-Algorithmus: Wähle diverseste Farben ---
-            def color_distance(c1, c2):
-                """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
-                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
+            # --- Hauptfarben-Kategorisierung: Sortiere in 5 Hauptfarben ---
+            def categorize_color(rgb):
+                """Ordnet eine RGB-Farbe einer der 5 Hauptkategorien zu"""
+                r, g, b = rgb
+                brightness = (r + g + b) / 3
+                
+                # Schwarz/Weiß haben Priorität (niedrige/hohe Helligkeit)
+                if brightness < 50:
+                    return 'black'
+                if brightness > 200:
+                    return 'white'
+                
+                # Für farbige Pixel: Welcher Kanal dominiert?
+                max_val = max(r, g, b)
+                # Mindestens 30 Unterschied zum nächsten Kanal, sonst zu entsättigt
+                if max_val - sorted([r, g, b])[-2] < 30:
+                    # Zu grau/entsättigt → zur nächsten Achse
+                    if brightness < 128:
+                        return 'black'
+                    else:
+                        return 'white'
+                
+                # Dominante Farbe
+                if r == max_val:
+                    return 'red'
+                elif g == max_val:
+                    return 'green'
+                else:
+                    return 'blue'
             
-            if all_colors and len(all_colors) >= est_n_colors:
-                # Greedy-Algorithmus: Wähle Farben mit maximalem Kontrast zueinander
-                # Start mit der häufigsten Farbe als Anker
-                sorted_by_freq = sorted(zip(all_colors, all_freqs), key=lambda x: x[1], reverse=True)
+            if all_colors:
+                # Gruppiere Farben nach Hauptkategorie
+                categories = {'black': [], 'white': [], 'red': [], 'green': [], 'blue': []}
+                for color, freq in zip(all_colors, all_freqs):
+                    cat = categorize_color(color)
+                    categories[cat].append((color, freq))
                 
-                selected_colors = [sorted_by_freq[0][0]]  # Starte mit häufigster Farbe
-                selected_freqs = [sorted_by_freq[0][1]]
-                remaining = [c for c, f in sorted_by_freq[1:]]
-                remaining_freqs = [f for c, f in sorted_by_freq[1:]]
+                # Wähle aus jeder Kategorie die häufigsten Farben
+                # Verteile est_n_colors proportional oder gleichmäßig auf Kategorien
+                colors_per_category = max(1, est_n_colors // 5)
+                selected_colors = []
+                selected_freqs = []
                 
-                # Iterativ: Wähle die Farbe mit maximalem Mindestabstand zu bereits gewählten
-                while len(selected_colors) < est_n_colors and remaining:
-                    best_min_distance = -1
-                    best_idx = 0
+                # Sortiere Kategorien nach Gesamthäufigkeit (wichtigste zuerst)
+                category_totals = {cat: sum(f for c, f in items) for cat, items in categories.items()}
+                sorted_categories = sorted(category_totals.keys(), key=lambda x: category_totals[x], reverse=True)
+                
+                # Wähle aus jeder Kategorie (falls vorhanden)
+                remaining_slots = est_n_colors
+                for cat in sorted_categories:
+                    if remaining_slots <= 0:
+                        break
                     
-                    # Für jede verbleibende Farbe: Berechne minimalen Abstand zu bereits gewählten
-                    for idx, color in enumerate(remaining):
-                        min_dist = min(color_distance(color, sel) for sel in selected_colors)
-                        # Wähle die Farbe mit dem größten Mindestabstand (= kontrastreichste)
-                        if min_dist > best_min_distance:
-                            best_min_distance = min_dist
-                            best_idx = idx
+                    cat_colors = categories[cat]
+                    if not cat_colors:
+                        continue
                     
-                    # Füge die kontrastreichste Farbe hinzu
-                    selected_colors.append(remaining.pop(best_idx))
-                    selected_freqs.append(remaining_freqs.pop(best_idx))
+                    # Sortiere nach Häufigkeit innerhalb der Kategorie
+                    cat_colors.sort(key=lambda x: x[1], reverse=True)
+                    
+                    # Nimm Top N aus dieser Kategorie (mindestens 1 wenn vorhanden, höchstens remaining_slots)
+                    n_from_cat = min(len(cat_colors), max(1, remaining_slots // (len(sorted_categories) - sorted_categories.index(cat))))
+                    
+                    for color, freq in cat_colors[:n_from_cat]:
+                        selected_colors.append(color)
+                        selected_freqs.append(freq)
+                        remaining_slots -= 1
+                        if remaining_slots <= 0:
+                            break
                 
-                # Alle nicht-gewählten Farben werden zur nächsten gewählten zugeordnet
-                final_freqs = list(selected_freqs)
-                for idx, color in enumerate(remaining):
-                    closest_idx = min(range(len(selected_colors)), 
-                                    key=lambda i: color_distance(color, selected_colors[i]))
-                    final_freqs[closest_idx] += remaining_freqs[idx]
+                # Falls noch Slots übrig: Fülle mit häufigsten verbleibenden Farben auf
+                if remaining_slots > 0:
+                    all_selected = set(selected_colors)
+                    remaining_colors = [(c, f) for c, f in zip(all_colors, all_freqs) if c not in all_selected]
+                    remaining_colors.sort(key=lambda x: x[1], reverse=True)
+                    for color, freq in remaining_colors[:remaining_slots]:
+                        selected_colors.append(color)
+                        selected_freqs.append(freq)
                 
-                palette_list = selected_colors
-                hist_list = final_freqs
+                palette_list = selected_colors[:est_n_colors]
+                hist_list = selected_freqs[:est_n_colors]
                 
                 # Renormalisiere Histogramm
                 total = sum(hist_list)
                 if total > 0:
                     hist_list = [h / total for h in hist_list]
-            elif all_colors:
-                # Weniger Farben als gewünscht
-                palette_list = all_colors
-                hist_list = all_freqs
             else:
                 palette_list = []
                 hist_list = []
