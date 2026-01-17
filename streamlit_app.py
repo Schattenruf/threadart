@@ -726,6 +726,28 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
         n_lines = [1000, 800, 600]
         darkness_values = [0.17, 0.17, 0.17]
 
+    # === KRITISCH: Prüfe, ob neue Werte vom "Vorschlag übernehmen" Button in session_state gespeichert sind ===
+    # Zähle wie viele color_pick_i Keys in session_state existieren
+    num_saved_colors = 0
+    for i in range(20):  # Check up to 20 colors
+        if f"color_pick_{i}" in st.session_state:
+            num_saved_colors = i + 1
+        else:
+            break
+    
+    # Wenn neue Farben vom Vorschlag vorhanden sind, lade sie ALLE
+    if num_saved_colors > 0:
+        palette = []
+        n_lines = []
+        darkness_values = []
+        for i in range(num_saved_colors):
+            hex_col = st.session_state.get(f"color_pick_{i}")
+            if hex_col:
+                r, g, b = int(hex_col[1:3], 16), int(hex_col[3:5], 16), int(hex_col[5:7], 16)
+                palette.append([r, g, b])
+                n_lines.append(st.session_state.get(f"lines_{i}", 1000))
+                darkness_values.append(st.session_state.get(f"darkness_{i}", 0.17))
+
     # Adjust palette based on num_colors (already defined above)
     num_colors_current = len(palette)
     if num_colors != num_colors_current:
