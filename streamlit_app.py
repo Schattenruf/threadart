@@ -1007,6 +1007,40 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
         obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
         try:
             decompose_image(obj, n_lines_total=n_lines_total_input)
+          
+            # Button zum Übernehmen in die Auswahl links
+            if st.button("📝 Vorschlag übernehmen", key="apply_suggestion_to_ui"):
+                palette = data["palette"]
+                histogram = data["color_histogram"]
+                
+                # Berechne Linienzahlen basierend auf Histogram
+                suggested_lines = [max(100, int(h * n_lines_total_input)) for h in histogram]
+                
+                # Fix rounding
+                remainder = n_lines_total_input - sum(suggested_lines)
+                if remainder != 0:
+                    try:
+                        sums = [sum(c) for c in palette]
+                        darkest_idx = sums.index(max(sums))
+                    except:
+                        darkest_idx = 0
+                    suggested_lines[darkest_idx] += remainder
+                
+                # Aktualisiere session_state für alle Color-Picker-Widgets
+                for i in range(len(palette)):
+                    color = palette[i]
+                    # Color picker
+                    hex_col = f"#{int(color[0]):02x}{int(color[1]):02x}{int(color[2]):02x}"
+                    st.session_state[f"color_pick_{i}"] = hex_col
+                    
+                    # Lines
+                    st.session_state[f"lines_{i}"] = suggested_lines[i]
+                    
+                    # Darkness (default)
+                    st.session_state[f"darkness_{i}"] = 0.17
+                
+                st.info(f"✅ {len(palette)} Farben mit Linienzahlen übernommen!")
+                st.rerun()
         except Exception as e:
             st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
     else:
