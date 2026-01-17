@@ -751,29 +751,38 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
         col1, col2, col3 = st.columns([1, 2, 2])
 
         with col1:
+            # Read from session_state if available (set by "Vorschlag übernehmen"), otherwise use palette
+            hex_default = f"#{palette[i][0]:02x}{palette[i][1]:02x}{palette[i][2]:02x}"
+            hex_from_state = st.session_state.get(f"color_pick_{i}", hex_default)
             color_hex = st.color_picker(
                 "Color",
-                f"#{palette[i][0]:02x}{palette[i][1]:02x}{palette[i][2]:02x}",
+                hex_from_state,
                 key=f"color_pick_{i}",
             )
             r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
 
         with col2:
+            # Read from session_state if available (set by "Vorschlag übernehmen"), otherwise use n_lines
+            lines_default = n_lines[i]
+            lines_from_state = st.session_state.get(f"lines_{i}", lines_default)
             lines = st.number_input(
                 "Lines",
                 min_value=100,
                 max_value=15000,
-                value=n_lines[i],
+                value=lines_from_state,
                 key=f"lines_{i}",
                 help="The total number of lines we'll draw for this color. 3 guidelines to consider here: (1) the line numbers should be roughly in proportion with their density in your image, (2) you should make sure to include a lot of black lines for most images because that's an important component of making a good piece of thread art, and (3) you should aim for about 6000 - 20000 total lues when summed over all colors (the exact number depends on some of your other parameters, and how detailed you want the piece to be).",
             )
 
         with col3:
+            # Read from session_state if available (set by "Vorschlag übernehmen"), otherwise use darkness_values
+            darkness_default = darkness_values[i]
+            darkness_from_state = st.session_state.get(f"darkness_{i}", darkness_default)
             darkness = st.number_input(
                 "Darkness",
                 min_value=0.05,
                 max_value=0.3,
-                value=darkness_values[i],
+                value=darkness_from_state,
                 key=f"darkness_{i}",
                 step=0.01,
                 help="The float value we'll subtract from pixels after each line is drawn (pixels start at a maximum value of 1.0). Lines are constantly drawn through the regions whose pixels have the highest average value. Smaller values here will produce images with a higher contrast (because we draw more lines in the dark areas before moving to the light areas).",
@@ -1007,8 +1016,8 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
         obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
         try:
             decompose_image(obj, n_lines_total=n_lines_total_input)
-          
-            # Button zum Übernehmen in die Auswahl links
+            
+            # Button zum Übernehmen NACH decompose_image
             if st.button("📝 Vorschlag übernehmen", key="apply_suggestion_to_ui"):
                 palette = data["palette"]
                 histogram = data["color_histogram"]
@@ -1039,7 +1048,7 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                     # Darkness (default)
                     st.session_state[f"darkness_{i}"] = 0.17
                 
-                st.info(f"✅ {len(palette)} Farben mit Linienzahlen übernommen!")
+                st.success(f"✅ {len(palette)} Farben mit Linienzahlen übernommen!")
                 st.rerun()
         except Exception as e:
             st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
