@@ -1069,6 +1069,12 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                     
                     # Darkness (default)
                     st.session_state[f"darkness_{i}"] = 0.17
+
+                # WICHTIG: Anzahl Farben im Sidebar synchronisieren, damit nicht wieder auf 3 gekürzt wird
+                try:
+                    st.session_state["num_colors_input"] = len(palette)
+                except Exception:
+                    pass
                 
                 st.success(f"✅ {len(palette)} Farben mit Linienzahlen übernommen!")
                 st.rerun()
