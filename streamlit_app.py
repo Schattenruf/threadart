@@ -450,86 +450,35 @@ with st.sidebar:
                     all_colors.append((r, g, b))
                     all_freqs.append(cnt / total_pixels)
             
-            # --- Hauptfarben-Kategorisierung: Sortiere in 5 Hauptfarben ---
-            def categorize_color(rgb):
-                """Ordnet eine RGB-Farbe einer der 5 Hauptkategorien zu"""
-                r, g, b = rgb
-                brightness = (r + g + b) / 3
-                
-                # Schwarz/Weiß haben Priorität (niedrige/hohe Helligkeit)
-                if brightness < 40:
-                    return 'black'
-                if brightness > 210:
-                    return 'white'
-                
-                # Für farbige Pixel: Welcher Kanal dominiert?
-                max_val = max(r, g, b)
-                min_val = min(r, g, b)
-                saturation = (max_val - min_val) / max_val if max_val > 0 else 0
-                
-                # Wenn sehr wenig Sättigung (< 0.2), als Graustufe klassifizieren
-                if saturation < 0.2:
-                    if brightness < 128:
-                        return 'black'
-                    else:
-                        return 'white'
-                
-                # Dominante Farbe (welcher Kanal ist größer als die anderen?)
-                if r >= g and r >= b:
-                    return 'red'
-                elif g >= r and g >= b:
-                    return 'green'
-                else:
-                    return 'blue'
+            # --- Direkter Diversity-Ansatz: Wähle die diversesten Farben ---
+            def color_distance(c1, c2):
+                """Euklidische Distanz im RGB-Raum"""
+                return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
             
             if all_colors:
-                # Gruppiere Farben nach Hauptkategorie
-                categories = {'black': [], 'white': [], 'red': [], 'green': [], 'blue': []}
-                for color, freq in zip(all_colors, all_freqs):
-                    cat = categorize_color(color)
-                    categories[cat].append((color, freq))
+                # Sortiere nach Häufigkeit
+                sorted_by_freq = sorted(zip(all_colors, all_freqs), key=lambda x: x[1], reverse=True)
                 
-                # Wähle aus jeder Kategorie die häufigsten Farben
-                # Verteile est_n_colors proportional oder gleichmäßig auf Kategorien
-                colors_per_category = max(1, est_n_colors // 5)
-                selected_colors = []
-                selected_freqs = []
+                # Greedy-Auswahl: Starte mit häufigster, dann wähle immer die mit größtem Mindestabstand
+                selected_colors = [sorted_by_freq[0][0]]
+                selected_freqs = [sorted_by_freq[0][1]]
+                remaining = [(c, f) for c, f in sorted_by_freq[1:]]
                 
-                # Sortiere Kategorien nach Gesamthäufigkeit (wichtigste zuerst)
-                category_totals = {cat: sum(f for c, f in items) for cat, items in categories.items()}
-                sorted_categories = sorted(category_totals.keys(), key=lambda x: category_totals[x], reverse=True)
-                
-                # Wähle aus jeder Kategorie (falls vorhanden)
-                remaining_slots = est_n_colors
-                for cat in sorted_categories:
-                    if remaining_slots <= 0:
-                        break
+                while len(selected_colors) < est_n_colors and remaining:
+                    # Finde Farbe mit max. Mindestabstand zu bereits gewählten
+                    best_idx = 0
+                    best_min_dist = -1
                     
-                    cat_colors = categories[cat]
-                    if not cat_colors:
-                        continue
+                    for idx, (color, freq) in enumerate(remaining):
+                        min_dist = min(color_distance(color, sel) for sel in selected_colors)
+                        if min_dist > best_min_dist:
+                            best_min_dist = min_dist
+                            best_idx = idx
                     
-                    # Sortiere nach Häufigkeit innerhalb der Kategorie
-                    cat_colors.sort(key=lambda x: x[1], reverse=True)
-                    
-                    # Nimm Top N aus dieser Kategorie (mindestens 1 wenn vorhanden, höchstens remaining_slots)
-                    n_from_cat = min(len(cat_colors), max(1, remaining_slots // (len(sorted_categories) - sorted_categories.index(cat))))
-                    
-                    for color, freq in cat_colors[:n_from_cat]:
-                        selected_colors.append(color)
-                        selected_freqs.append(freq)
-                        remaining_slots -= 1
-                        if remaining_slots <= 0:
-                            break
-                
-                # Falls noch Slots übrig: Fülle mit häufigsten verbleibenden Farben auf
-                if remaining_slots > 0:
-                    all_selected = set(selected_colors)
-                    remaining_colors = [(c, f) for c, f in zip(all_colors, all_freqs) if c not in all_selected]
-                    remaining_colors.sort(key=lambda x: x[1], reverse=True)
-                    for color, freq in remaining_colors[:remaining_slots]:
-                        selected_colors.append(color)
-                        selected_freqs.append(freq)
+                    # Füge beste Farbe hinzu
+                    color, freq = remaining.pop(best_idx)
+                    selected_colors.append(color)
+                    selected_freqs.append(freq)
                 
                 palette_list = selected_colors[:est_n_colors]
                 hist_list = selected_freqs[:est_n_colors]
@@ -539,11 +488,10 @@ with st.sidebar:
                 if total > 0:
                     hist_list = [h / total for h in hist_list]
                 
-                # DEBUG: Zeige erkannte Kategorien
-                debug_cats = {cat: sum(f for c, f in items) if items else 0 for cat, items in categories.items()}
-                debug_str = "Kategorien: " + ", ".join([f"{k}={v:.1%}" for k, v in sorted(debug_cats.items(), key=lambda x: x[1], reverse=True)])
-                st.write(f"🔍 Debug - {debug_str}")
-                st.write(f"🎨 Ausgewählte Farben: {len(palette_list)}/{est_n_colors} | Kategorien mit Farben: {len([c for c in categories.values() if c])}")
+                # DEBUG: Zeige RGB-Werte der gewählten Farben
+                debug_colors = ", ".join([f"RGB{c}" for c in palette_list[:5]])
+                st.write(f"🔍 Debug - Top 5 Farben: {debug_colors}")
+                st.write(f"🎨 Ausgewählte {len(palette_list)} Farben mit maximaler Diversity")
             else:
                 palette_list = []
                 hist_list = []
