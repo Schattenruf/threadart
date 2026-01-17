@@ -431,13 +431,13 @@ with st.sidebar:
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
             img_small = image.convert("RGB").resize((thumb_w, thumb_h), Image.BILINEAR)
 
-            # Quantisiere auf mehr Farben als gewünscht, damit wir dann mergen können
-            quant = img_small.quantize(colors=est_n_colors * 3, method=Image.MEDIANCUT)
+            # Quantisiere auf VIELE Farben, um das gesamte Spektrum zu erfassen
+            quant = img_small.quantize(colors=min(100, est_n_colors * 15), method=Image.MEDIANCUT)
 
             # quant.getcolors() liefert Liste von (count, palette_index)
-            colors_info = quant.getcolors(maxcolors=est_n_colors * 3)
-            palette_list = []
-            hist_list = []
+            colors_info = quant.getcolors(maxcolors=100)
+            all_colors = []
+            all_freqs = []
             if colors_info:
                 # Die Palette der quantisierten Image enthält RGB-Tripel in einer flachen Liste
                 flat_pal = quant.getpalette()
@@ -447,65 +447,62 @@ with st.sidebar:
                     r = flat_pal[idx * 3]
                     g = flat_pal[idx * 3 + 1]
                     b = flat_pal[idx * 3 + 2]
-                    palette_list.append((r, g, b))
-                    hist_list.append(cnt / total_pixels)
+                    all_colors.append((r, g, b))
+                    all_freqs.append(cnt / total_pixels)
             
-            # --- Wähle kontrastierende Farben aus (verhindert zu ähnliche Farben) ---
+            # --- Maximaler Kontrast-Algorithmus: Wähle diverseste Farben ---
             def color_distance(c1, c2):
                 """Berechnet Euklidische Distanz zwischen zwei RGB-Farben"""
                 return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
             
-            if palette_list and len(palette_list) > est_n_colors:
-                # Minimum Distanz zwischen ausgewählten Farben (niedriger = mehr Variation erlaubt)
-                MIN_COLOR_DISTANCE = 40  # Werte zwischen 30-60 sind sinnvoll
+            if all_colors and len(all_colors) >= est_n_colors:
+                # Greedy-Algorithmus: Wähle Farben mit maximalem Kontrast zueinander
+                # Start mit der häufigsten Farbe als Anker
+                sorted_by_freq = sorted(zip(all_colors, all_freqs), key=lambda x: x[1], reverse=True)
                 
-                # Sortiere erst nach Häufigkeit
-                sorted_pairs = sorted(zip(palette_list, hist_list), key=lambda x: x[1], reverse=True)
+                selected_colors = [sorted_by_freq[0][0]]  # Starte mit häufigster Farbe
+                selected_freqs = [sorted_by_freq[0][1]]
+                remaining = [c for c, f in sorted_by_freq[1:]]
+                remaining_freqs = [f for c, f in sorted_by_freq[1:]]
                 
-                # Greedy-Auswahl: Nimm häufigste Farben, die hinreichend unterschiedlich sind
-                selected_palette = []
-                selected_hist = []
-                
-                for color, freq in sorted_pairs:
-                    # Prüfe, ob diese Farbe zu ähnlich zu bereits gewählten ist
-                    is_distinct = True
-                    for existing_color in selected_palette:
-                        if color_distance(color, existing_color) < MIN_COLOR_DISTANCE:
-                            is_distinct = False
-                            break
+                # Iterativ: Wähle die Farbe mit maximalem Mindestabstand zu bereits gewählten
+                while len(selected_colors) < est_n_colors and remaining:
+                    best_min_distance = -1
+                    best_idx = 0
                     
-                    if is_distinct:
-                        selected_palette.append(color)
-                        selected_hist.append(freq)
-                    else:
-                        # Addiere Häufigkeit zur ähnlichsten Farbe
-                        closest_idx = min(range(len(selected_palette)), 
-                                        key=lambda i: color_distance(color, selected_palette[i]))
-                        selected_hist[closest_idx] += freq
+                    # Für jede verbleibende Farbe: Berechne minimalen Abstand zu bereits gewählten
+                    for idx, color in enumerate(remaining):
+                        min_dist = min(color_distance(color, sel) for sel in selected_colors)
+                        # Wähle die Farbe mit dem größten Mindestabstand (= kontrastreichste)
+                        if min_dist > best_min_distance:
+                            best_min_distance = min_dist
+                            best_idx = idx
                     
-                    # Stoppe, wenn wir genug Farben haben
-                    if len(selected_palette) >= est_n_colors:
-                        break
+                    # Füge die kontrastreichste Farbe hinzu
+                    selected_colors.append(remaining.pop(best_idx))
+                    selected_freqs.append(remaining_freqs.pop(best_idx))
                 
-                # Falls wir zu wenig distinkte Farben gefunden haben, fülle auf
-                while len(selected_palette) < est_n_colors and len(sorted_pairs) > len(selected_palette):
-                    # Nimm einfach die nächste verfügbare Farbe
-                    for color, freq in sorted_pairs:
-                        if color not in selected_palette:
-                            selected_palette.append(color)
-                            selected_hist.append(freq)
-                            break
+                # Alle nicht-gewählten Farben werden zur nächsten gewählten zugeordnet
+                final_freqs = list(selected_freqs)
+                for idx, color in enumerate(remaining):
+                    closest_idx = min(range(len(selected_colors)), 
+                                    key=lambda i: color_distance(color, selected_colors[i]))
+                    final_freqs[closest_idx] += remaining_freqs[idx]
                 
-                palette_list = selected_palette[:est_n_colors]
-                hist_list = selected_hist[:est_n_colors]
+                palette_list = selected_colors
+                hist_list = final_freqs
                 
                 # Renormalisiere Histogramm
                 total = sum(hist_list)
                 if total > 0:
                     hist_list = [h / total for h in hist_list]
-            elif palette_list:
-                # Wenn wir schon weniger oder gleich est_n_colors haben, behalte alle
-                pass
+            elif all_colors:
+                # Weniger Farben als gewünscht
+                palette_list = all_colors
+                hist_list = all_freqs
+            else:
+                palette_list = []
+                hist_list = []
             
             # Falls quantize weniger Farben zurückgibt (oder leer), fallback auf eine gleichverteilte Schätzung
             if not palette_list:
