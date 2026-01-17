@@ -450,7 +450,7 @@ with st.sidebar:
                     all_colors.append((r, g, b))
                     all_freqs.append(cnt / total_pixels)
             
-            # --- K-Means Clustering: Finde est_n_colors repräsentative Farben ---
+            # --- K-Means Clustering: Finde est_n_colors diverse repräsentative Farben ---
             if all_colors and len(all_colors) > 0:
                 try:
                     from sklearn.cluster import KMeans
@@ -471,18 +471,45 @@ with st.sidebar:
                         mask = labels == i
                         cluster_freqs.append(np.sum(freqs_array[mask]))
                     
-                    # Sortiere nach Häufigkeit
-                    sorted_idx = sorted(range(len(centers)), key=lambda i: cluster_freqs[i], reverse=True)
+                    # Greedy-Selektion: Wähle die diversesten Cluster-Centers
+                    def color_dist(c1, c2):
+                        return ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2 + (c1[2] - c2[2])**2) ** 0.5
                     
-                    palette_list = [tuple(centers[i]) for i in sorted_idx]
-                    hist_list = [cluster_freqs[i] for i in sorted_idx]
+                    selected_indices = []
+                    selected_centers = []
+                    remaining = list(range(len(centers)))
+                    
+                    # Starte mit häufigster Farbe
+                    start_idx = max(range(len(centers)), key=lambda i: cluster_freqs[i])
+                    selected_indices.append(start_idx)
+                    selected_centers.append(centers[start_idx])
+                    remaining.remove(start_idx)
+                    
+                    # Greedy: Nimm immer die mit max. Mindestabstand zu bisherigen
+                    while len(selected_indices) < est_n_colors and remaining:
+                        best_rem_idx = 0
+                        best_min_dist = -1
+                        
+                        for rem_i, idx in enumerate(remaining):
+                            min_dist_to_selected = min(color_dist(centers[idx], c) for c in selected_centers)
+                            if min_dist_to_selected > best_min_dist:
+                                best_min_dist = min_dist_to_selected
+                                best_rem_idx = rem_i
+                        
+                        idx = remaining.pop(best_rem_idx)
+                        selected_indices.append(idx)
+                        selected_centers.append(centers[idx])
+                    
+                    # Baue finale Palette
+                    palette_list = [tuple(centers[i]) for i in selected_indices]
+                    hist_list = [cluster_freqs[i] for i in selected_indices]
                     
                     # Renormalisiere
                     total = sum(hist_list)
                     if total > 0:
                         hist_list = [h / total for h in hist_list]
                     
-                    st.write(f"🔍 K-Means: {len(palette_list)} Cluster gefunden - sollte grün enthalten!")
+                    st.write(f"🔍 K-Means + Diversity-Greedy: {len(palette_list)} diverse Farben gefunden!")
                     
                 except ImportError:
                     # Fallback ohne sklearn: Nutze quantize mit höherer Auflösung
@@ -540,6 +567,21 @@ with st.sidebar:
                         except Exception:
                             darkest_idx = 0
                         suggested_lines[darkest_idx] += remainder
+                    
+                    # Normalisiere auf max 15000 pro Farbe (UI-Limit)
+                    max_lines = max(suggested_lines) if suggested_lines else 1000
+                    if max_lines > 15000:
+                        scale_factor = 15000 / max_lines
+                        suggested_lines = [max(100, int(l * scale_factor)) for l in suggested_lines]
+                        # Fix rounding again
+                        remainder = DEFAULT_TOTAL_SUGGESTED_LINES - sum(suggested_lines)
+                        if remainder != 0:
+                            try:
+                                sums = [sum(c) for c in suggested_palette]
+                                darkest_idx = sums.index(max(sums))
+                            except Exception:
+                                darkest_idx = 0
+                            suggested_lines[darkest_idx] += remainder
 
                     # default darkness values (adjust if you want heuristics here)
                     suggested_darkness = [0.17] * len(suggested_palette)
