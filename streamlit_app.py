@@ -391,6 +391,16 @@ with st.sidebar:
     preset_lines = demo_presets[demo_option].get("lines", None)
     preset_step_size = demo_presets[demo_option].get("step_size", None)
 
+    # Number of Colors (user control). Placed BEFORE image quantize so suggestions can read it.
+    num_colors = st.number_input(
+        "Number of Colors",
+        min_value=1,
+        max_value=10,
+        value=(len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3),
+        key="num_colors_input",
+        help="We recommend always including black and white, as well as between 1 and 4 other colors depending on your image.",
+    )
+
     image_selected = False
     image = None
 
@@ -415,7 +425,7 @@ with st.sidebar:
         )
         # --- Schnell-Histogramm erzeugen, sobald ein Bild ausgewählt wurde ---
         try:
-            est_n_colors = len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3
+            est_n_colors = st.session_state.get("num_colors_input", len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3)
             # Verkleinern für Geschwindigkeit
             thumb_w = 200
             thumb_h = max(1, int(image.height * thumb_w / max(1, image.width)))
@@ -602,17 +612,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
         n_lines = [1000, 800, 600]
         darkness_values = [0.17, 0.17, 0.17]
 
-    # Number of Colors (user control). Placed BEFORE image quantize so suggestions can read it.
-    num_colors = st.number_input(
-        "Number of Colors",
-        min_value=1,
-        max_value=10,
-        # Default: if demo preset provides palette use that length, otherwise 3
-        value=(len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3),
-        key="num_colors_input",
-        help="We recommend always including black and white, as well as between 1 and 4 other colors depending on your image.",
-    )
-
+    # Adjust palette based on num_colors (already defined above)
     num_colors_current = len(palette)
     if num_colors != num_colors_current:
         if num_colors > num_colors_current:
