@@ -1005,7 +1005,14 @@ if st.session_state.get("all_found_colors"):
     if "color_palette_expanded" not in st.session_state:
         st.session_state.color_palette_expanded = True
     
-    with st.expander("🎨 Gefundene Farben - Wähle aus, welche du möchtest:", expanded=st.session_state.color_palette_expanded):
+    # Zähle ausgewählte Farben
+    num_selected = sum(1 for selected in st.session_state.get("color_checkbox_states", []) if selected)
+    if num_selected > 0:
+        expander_title = f"🎨 Gefundene Farben ({num_selected} gewählt)"
+    else:
+        expander_title = "🎨 Gefundene Farben - Wähle aus, welche du möchtest:"
+    
+    with st.expander(expander_title, expanded=st.session_state.color_palette_expanded):
         cols_per_row = 5
         for row_idx in range(0, len(st.session_state.all_found_colors), cols_per_row):
             cols = st.columns(cols_per_row)
@@ -1021,10 +1028,10 @@ if st.session_state.get("all_found_colors"):
                 with col:
                     # Checkbox
                     selected = st.checkbox(
-                        f"{category}\n{hex_color}",
+                        f"{category}",
                         value=st.session_state.color_checkbox_states[color_idx],
                         key=f"color_select_{color_idx}",
-                        help=f"Anteil: {percent:.1%}"
+                        help=f"{hex_color}"
                     )
                     st.session_state.color_checkbox_states[color_idx] = selected
                     
