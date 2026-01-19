@@ -517,32 +517,15 @@ with st.sidebar:
     preset_step_size = demo_presets[demo_option].get("step_size", None)
 
     # Number of Colors (user control). Placed BEFORE image quantize so suggestions can read it.
-    # Dynamically compute value based on saved colors from "Vorschlag übernehmen"
-    widget_version_check = st.session_state.get("widget_version", 0)
-    widget_suffix_check = f"_v{widget_version_check}"
-    
-    # Count how many color_pick keys exist (with current suffix)
-    num_saved_colors_check = 0
-    for i in range(20):
-        key_with_suffix = f"color_pick_{i}{widget_suffix_check}"
-        key_without_suffix = f"color_pick_{i}"
-        if key_with_suffix in st.session_state or key_without_suffix in st.session_state:
-            num_saved_colors_check = i + 1
-        else:
-            break
-    
-    # Use saved colors count if available, otherwise use preset or default
-    if num_saved_colors_check > 0:
-        num_colors_value = num_saved_colors_check
-    else:
+    # Initialize session_state if not set (but don't use value= parameter to avoid warning)
+    if "num_colors_input" not in st.session_state:
         default_num_colors = (len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3)
-        num_colors_value = default_num_colors
+        st.session_state["num_colors_input"] = default_num_colors
     
     num_colors = st.number_input(
         "Number of Colors",
         min_value=1,
         max_value=10,
-        value=num_colors_value,
         key="num_colors_input",
         help="We recommend always including black and white, as well as between 1 and 4 other colors depending on your image.",
     )
@@ -1120,6 +1103,9 @@ def apply_suggestion_callback():
         
         # Darkness (default)
         st.session_state[f"darkness_{i}{widget_suffix}"] = 0.17
+    
+    # Update num_colors widget to show correct number
+    st.session_state["num_colors_input"] = len(palette)
     
     # Lösche ALLE alten Widget-Keys - mit UND ohne Suffix!
     # Das ist wichtig, weil Streamlit Widgets mit ihren Keys cached
