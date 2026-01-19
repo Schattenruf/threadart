@@ -1001,7 +1001,11 @@ if st.session_state.generated_html:
     st.markdown(href_html, unsafe_allow_html=True)
 # === Gefundene Farben - Ausklappbarer Bereich (nur bei Custom Upload) ===
 if st.session_state.get("all_found_colors"):
-    with st.expander("🎨 Gefundene Farben - Wähle aus, welche du möchtest:", expanded=True):
+    # Initialisiere expanded state falls nicht vorhanden
+    if "color_palette_expanded" not in st.session_state:
+        st.session_state.color_palette_expanded = True
+    
+    with st.expander("🎨 Gefundene Farben - Wähle aus, welche du möchtest:", expanded=st.session_state.color_palette_expanded):
         cols_per_row = 5
         for row_idx in range(0, len(st.session_state.all_found_colors), cols_per_row):
             cols = st.columns(cols_per_row)
@@ -1051,6 +1055,8 @@ if st.session_state.get("all_found_colors"):
                     "palette": selected_colors,
                     "color_histogram": selected_hists
                 }
+                # Klappe Farben-Palette ein
+                st.session_state.color_palette_expanded = False
                 st.success(f"✅ {len(selected_colors)} Farben gewählt!")
             else:
                 st.warning("⚠️ Wähle mindestens eine Farbe!")
