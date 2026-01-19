@@ -739,8 +739,9 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
         else:
             break
     
-    # Wenn neue Farben vom Vorschlag vorhanden sind, lade sie ALLE
+    # WICHTIG: Wenn Vorschlag vorhanden, ignoriere num_colors Widget komplett!
     if num_saved_colors > 0:
+        # Lade alle gespeicherten Farben
         palette = []
         n_lines = []
         darkness_values = []
@@ -751,28 +752,34 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
                 palette.append([r, g, b])
                 n_lines.append(st.session_state.get(f"lines_{i}", 1000))
                 darkness_values.append(st.session_state.get(f"darkness_{i}", 0.17))
-
-    # Adjust palette based on num_colors (already defined above)
-    num_colors_current = len(palette)
-    if num_colors != num_colors_current:
-        if num_colors > num_colors_current:
-            # Add more colors
-            for i in range(num_colors_current, num_colors):
-                palette.append([128, 128, 128])  # Default to gray
-                n_lines.append(1000)  # Default number of lines
-                darkness_values.append(0.17)
-        else:
-            # Remove colors
-            palette = palette[:num_colors]
-            n_lines = n_lines[:num_colors]
-            darkness_values = darkness_values[:num_colors]
+        
+        # Verwende die Anzahl gespeicherter Farben für Rendering (NICHT das Widget!)
+        num_colors_to_render = num_saved_colors
+    else:
+        # Kein Vorschlag vorhanden - verwende num_colors Widget
+        num_colors_to_render = num_colors
+        
+        # Adjust palette based on num_colors (from widget)
+        num_colors_current = len(palette)
+        if num_colors_to_render != num_colors_current:
+            if num_colors_to_render > num_colors_current:
+                # Add more colors
+                for i in range(num_colors_current, num_colors_to_render):
+                    palette.append([128, 128, 128])  # Default to gray
+                    n_lines.append(1000)  # Default number of lines
+                    darkness_values.append(0.17)
+            else:
+                # Remove colors
+                palette = palette[:num_colors_to_render]
+                n_lines = n_lines[:num_colors_to_render]
+                darkness_values = darkness_values[:num_colors_to_render]
 
     # Color editors
     new_palette = []
     new_n_lines = []
     new_darkness = []
 
-    for i in range(num_colors):
+    for i in range(num_colors_to_render):
         # st.markdown(f"##### Color {i + 1}")
         col1, col2, col3 = st.columns([1, 2, 2])
 
