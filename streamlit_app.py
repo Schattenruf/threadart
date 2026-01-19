@@ -731,27 +731,47 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
         darkness_values = [0.17, 0.17, 0.17]
 
     # === KRITISCH: Prüfe, ob neue Werte vom "Vorschlag übernehmen" Button in session_state gespeichert sind ===
-    # Zähle wie viele color_pick_i Keys in session_state existieren
+    # Zähle wie viele color_pick_i Keys in session_state existieren (mit aktuellem Suffix)
+    widget_version = st.session_state.get("widget_version", 0)
+    widget_suffix = f"_v{widget_version}"
+    
     num_saved_colors = 0
     for i in range(20):  # Check up to 20 colors
-        if f"color_pick_{i}" in st.session_state:
+        # Prüfe Keys BOTH mit und ohne Suffix
+        key_with_suffix = f"color_pick_{i}{widget_suffix}"
+        key_without_suffix = f"color_pick_{i}"
+        if key_with_suffix in st.session_state or key_without_suffix in st.session_state:
             num_saved_colors = i + 1
         else:
             break
     
     # WICHTIG: Wenn Vorschlag vorhanden, ignoriere num_colors Widget komplett!
     if num_saved_colors > 0:
-        # Lade alle gespeicherten Farben
+        # Lade alle gespeicherten Farben (mit Suffix oder ohne)
         palette = []
         n_lines = []
         darkness_values = []
         for i in range(num_saved_colors):
-            hex_col = st.session_state.get(f"color_pick_{i}")
+            # Prüfe zuerst mit Suffix, dann ohne
+            hex_col = st.session_state.get(f"color_pick_{i}{widget_suffix}")
+            if not hex_col:
+                hex_col = st.session_state.get(f"color_pick_{i}")
+                
             if hex_col:
                 r, g, b = int(hex_col[1:3], 16), int(hex_col[3:5], 16), int(hex_col[5:7], 16)
                 palette.append([r, g, b])
-                n_lines.append(st.session_state.get(f"lines_{i}", 1000))
-                darkness_values.append(st.session_state.get(f"darkness_{i}", 0.17))
+                
+                # Lese Lines (mit Suffix oder ohne)
+                lines_val = st.session_state.get(f"lines_{i}{widget_suffix}")
+                if not lines_val:
+                    lines_val = st.session_state.get(f"lines_{i}", 1000)
+                n_lines.append(lines_val)
+                
+                # Lese Darkness (mit Suffix oder ohne)
+                dark_val = st.session_state.get(f"darkness_{i}{widget_suffix}")
+                if not dark_val:
+                    dark_val = st.session_state.get(f"darkness_{i}", 0.17)
+                darkness_values.append(dark_val)
         
         # Verwende die Anzahl gespeicherter Farben für Rendering (NICHT das Widget!)
         num_colors_to_render = num_saved_colors
@@ -779,18 +799,18 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
     new_n_lines = []
     new_darkness = []
     
-    # KRITISCH: Wenn gerade ein Vorschlag übernommen wurde, benutze einen neuen Widget-Key-Suffix
-    # Das zwingt Streamlit, die Widgets neu zu erstellen statt den Cache zu benutzen
-    widget_suffix = f"_v{int(st.session_state.get('suggestion_applied_at', False))}"
+    # KRITISCH: Benutze den aktuellen Widget-Version Counter für Keys
+    widget_version = st.session_state.get("widget_version", 0)
+    widget_suffix = f"_v{widget_version}"
 
     for i in range(num_colors_to_render):
         # st.markdown(f"##### Color {i + 1}")
         col1, col2, col3 = st.columns([1, 2, 2])
 
         with col1:
-            # Read from session_state if available (set by "Vorschlag übernehmen"), otherwise use palette
+            # Lese von session_state mit dem aktuellen suffix
             hex_default = f"#{palette[i][0]:02x}{palette[i][1]:02x}{palette[i][2]:02x}"
-            hex_from_state = st.session_state.get(f"color_pick_{i}", hex_default)
+            hex_from_state = st.session_state.get(f"color_pick_{i}{widget_suffix}", hex_default)
             color_hex = st.color_picker(
                 "Color",
                 hex_from_state,
@@ -799,9 +819,9 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
             r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
 
         with col2:
-            # Read from session_state if available (set by "Vorschlag übernehmen"), otherwise use n_lines
+            # Lese von session_state mit dem aktuellen suffix
             lines_default = n_lines[i]
-            lines_from_state = st.session_state.get(f"lines_{i}", lines_default)
+            lines_from_state = st.session_state.get(f"lines_{i}{widget_suffix}", lines_default)
             lines = st.number_input(
                 "Lines",
                 min_value=100,
@@ -812,9 +832,9 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
             )
 
         with col3:
-            # Read from session_state if available (set by "Vorschlag übernehmen"), otherwise use darkness_values
+            # Lese von session_state mit dem aktuellen suffix
             darkness_default = darkness_values[i]
-            darkness_from_state = st.session_state.get(f"darkness_{i}", darkness_default)
+            darkness_from_state = st.session_state.get(f"darkness_{i}{widget_suffix}", darkness_default)
             darkness = st.number_input(
                 "Darkness",
                 min_value=0.05,
@@ -1072,24 +1092,27 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                         darkest_idx = 0
                     suggested_lines[darkest_idx] += remainder
                 
-                # Speichere einen Timestamp für Widget-Reset
-                st.session_state["suggestion_applied_at"] = True
+                # Inkrementiere Widget-Version Counter
+                current_version = st.session_state.get("widget_version", 0)
+                new_version = current_version + 1
+                st.session_state["widget_version"] = new_version
+                widget_suffix = f"_v{new_version}"
                 
-                # Setze die neuen Werte DIREKT in session_state
+                # Setze die neuen Werte mit dem NEUEN Widget-Suffix
                 for i in range(len(palette)):
                     color = palette[i]
                     # Color picker
                     hex_col = f"#{int(color[0]):02x}{int(color[1]):02x}{int(color[2]):02x}"
-                    st.session_state[f"color_pick_{i}"] = hex_col
+                    st.session_state[f"color_pick_{i}{widget_suffix}"] = hex_col
                     
                     # Lines
-                    st.session_state[f"lines_{i}"] = suggested_lines[i]
+                    st.session_state[f"lines_{i}{widget_suffix}"] = suggested_lines[i]
                     
                     # Darkness (default)
-                    st.session_state[f"darkness_{i}"] = 0.17
+                    st.session_state[f"darkness_{i}{widget_suffix}"] = 0.17
                 
-                # Lösche alle UNGEBRAUCHTEN Widget-Keys (oberhalb der neu gesetzten Farben)
-                for i in range(len(palette), 20):
+                # Lösche alle alten Widget-Keys (ohne suffix)
+                for i in range(20):
                     for key_prefix in ["color_pick_", "lines_", "darkness_"]:
                         key = f"{key_prefix}{i}"
                         if key in st.session_state:
