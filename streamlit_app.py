@@ -153,7 +153,14 @@ def extract_colors_hsv(image_pil):
 
     def gather(mask, top_n=5):
         pixels_sel = pixels[mask]
-        return get_top_colors_kmeans(pixels_sel, top_n=top_n)
+        if len(pixels_sel) == 0:
+            return []
+        # Convert cluster share (relative to this subset) into a global share of all pixels
+        subset_ratio = len(pixels_sel) / len(pixels)
+        results = get_top_colors_kmeans(pixels_sel, top_n=top_n)
+        for r in results:
+            r['percent'] *= subset_ratio
+        return results
 
     results = {
         'black': ({'hex': '#000000', 'percent': black_pct, 'rgb': (0, 0, 0)} if black_pct > 0.01 else None),
