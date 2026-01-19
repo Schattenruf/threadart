@@ -1059,10 +1059,50 @@ if st.session_state.get("all_found_colors"):
                 if total > 0:
                     selected_hists = [h / total for h in selected_hists]
                 
+                # === Berechne Group Order Vorschlag ===
+                # Berechne Luminanz für jede Farbe (0.299*R + 0.587*G + 0.114*B)
+                luminances = []
+                for color in selected_colors:
+                    lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+                    luminances.append(lum)
+                
+                # Sortiere Farben nach Luminanz (hell -> dunkel)
+                sorted_indices = sorted(range(len(selected_colors)), key=lambda i: luminances[i], reverse=True)
+                
+                # Erstelle Group Order: 1-basiert!
+                num_colors = len(selected_colors)
+                base_sequence = [idx + 1 for idx in sorted_indices]  # +1 weil 1-basiert
+                
+                # Anzahl der Basis-Loops basierend auf Farbanzahl
+                if num_colors <= 2:
+                    num_loops = 4
+                elif num_colors <= 4:
+                    num_loops = 4
+                elif num_colors <= 6:
+                    num_loops = 3
+                else:
+                    num_loops = 2
+                
+                # Erstelle Sequenz mit mehreren Durchläufen
+                group_order_list = []
+                for loop in range(num_loops):
+                    group_order_list.extend(base_sequence)
+                
+                # Extra: Dunkelste Farbe(n) nochmal am Ende hinzufügen
+                num_darkest = min(2, num_colors)
+                darkest_indices = sorted(range(len(selected_colors)), key=lambda i: luminances[i])[:num_darkest]
+                for idx in darkest_indices:
+                    group_order_list.append(idx + 1)
+                    group_order_list.append(idx + 1)
+                
+                suggested_group_order = ",".join(map(str, group_order_list))
+                
                 st.session_state.decompose_data = {
                     "palette": selected_colors,
                     "color_histogram": selected_hists
                 }
+                st.session_state["suggested_group_order"] = suggested_group_order
+                
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
                 st.rerun()
