@@ -778,6 +778,10 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
     new_palette = []
     new_n_lines = []
     new_darkness = []
+    
+    # KRITISCH: Wenn gerade ein Vorschlag übernommen wurde, benutze einen neuen Widget-Key-Suffix
+    # Das zwingt Streamlit, die Widgets neu zu erstellen statt den Cache zu benutzen
+    widget_suffix = f"_v{int(st.session_state.get('suggestion_applied_at', False))}"
 
     for i in range(num_colors_to_render):
         # st.markdown(f"##### Color {i + 1}")
@@ -790,7 +794,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
             color_hex = st.color_picker(
                 "Color",
                 hex_from_state,
-                key=f"color_pick_{i}",
+                key=f"color_pick_{i}{widget_suffix}",
             )
             r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
 
@@ -803,7 +807,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
                 min_value=100,
                 max_value=15000,
                 value=lines_from_state,
-                key=f"lines_{i}",
+                key=f"lines_{i}{widget_suffix}",
                 help="The total number of lines we'll draw for this color. 3 guidelines to consider here: (1) the line numbers should be roughly in proportion with their density in your image, (2) you should make sure to include a lot of black lines for most images because that's an important component of making a good piece of thread art, and (3) you should aim for about 6000 - 20000 total lues when summed over all colors (the exact number depends on some of your other parameters, and how detailed you want the piece to be).",
             )
 
@@ -816,7 +820,7 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
                 min_value=0.05,
                 max_value=0.3,
                 value=darkness_from_state,
-                key=f"darkness_{i}",
+                key=f"darkness_{i}{widget_suffix}",
                 step=0.01,
                 help="The float value we'll subtract from pixels after each line is drawn (pixels start at a maximum value of 1.0). Lines are constantly drawn through the regions whose pixels have the highest average value. Smaller values here will produce images with a higher contrast (because we draw more lines in the dark areas before moving to the light areas).",
             )
@@ -1068,15 +1072,10 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                         darkest_idx = 0
                     suggested_lines[darkest_idx] += remainder
                 
-                # KRITISCH: Lösche ALLE alten Widget-Keys aus session_state (bis zu 20)
-                # Dies zwingt Streamlit, die Widgets komplett neu zu initialisieren
-                for i in range(20):
-                    for key_prefix in ["color_pick_", "lines_", "darkness_"]:
-                        key = f"{key_prefix}{i}"
-                        if key in st.session_state:
-                            del st.session_state[key]
+                # Speichere einen Timestamp für Widget-Reset
+                st.session_state["suggestion_applied_at"] = True
                 
-                # JETZT setze die neuen Werte
+                # Setze die neuen Werte DIREKT in session_state
                 for i in range(len(palette)):
                     color = palette[i]
                     # Color picker
@@ -1088,8 +1087,15 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                     
                     # Darkness (default)
                     st.session_state[f"darkness_{i}"] = 0.17
+                
+                # Lösche alle UNGEBRAUCHTEN Widget-Keys (oberhalb der neu gesetzten Farben)
+                for i in range(len(palette), 20):
+                    for key_prefix in ["color_pick_", "lines_", "darkness_"]:
+                        key = f"{key_prefix}{i}"
+                        if key in st.session_state:
+                            del st.session_state[key]
 
-                # WICHTIG: Anzahl Farben im Sidebar synchronisieren, damit nicht wieder auf 3 gekürzt wird
+                # WICHTIG: Anzahl Farben im Sidebar synchronisieren
                 try:
                     st.session_state["num_colors_input"] = len(palette)
                 except Exception:
