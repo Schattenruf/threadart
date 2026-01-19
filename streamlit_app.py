@@ -1055,6 +1055,69 @@ if st.session_state.get("all_found_colors"):
             else:
                 st.warning("⚠️ Wähle mindestens eine Farbe!")
 
+# Callback-Funktion für "Vorschlag übernehmen" Button
+def apply_suggestion_callback():
+    """Diese Funktion wird aufgerufen wenn der Button geklickt wird."""
+    if not st.session_state.get("decompose_data"):
+        return
+    
+    data = st.session_state.decompose_data
+    palette = data["palette"]
+    histogram = data["color_histogram"]
+    n_lines_total = st.session_state.get("decompose_total_lines_input", 10000)
+    
+    # Berechne Linienzahlen basierend auf Histogram
+    suggested_lines = [max(100, int(h * n_lines_total)) for h in histogram]
+    
+    # Fix rounding
+    remainder = n_lines_total - sum(suggested_lines)
+    if remainder != 0:
+        try:
+            sums = [sum(c) for c in palette]
+            darkest_idx = sums.index(max(sums))
+        except:
+            darkest_idx = 0
+        suggested_lines[darkest_idx] += remainder
+    
+    # Inkrementiere Widget-Version Counter
+    current_version = st.session_state.get("widget_version", 0)
+    new_version = current_version + 1
+    st.session_state["widget_version"] = new_version
+    widget_suffix = f"_v{new_version}"
+    
+    # Setze die neuen Werte mit dem NEUEN Widget-Suffix
+    for i in range(len(palette)):
+        color = palette[i]
+        # Color picker
+        hex_col = f"#{int(color[0]):02x}{int(color[1]):02x}{int(color[2]):02x}"
+        st.session_state[f"color_pick_{i}{widget_suffix}"] = hex_col
+        
+        # Lines
+        st.session_state[f"lines_{i}{widget_suffix}"] = suggested_lines[i]
+        
+        # Darkness (default)
+        st.session_state[f"darkness_{i}{widget_suffix}"] = 0.17
+    
+    # Lösche ALLE alten Widget-Keys - mit UND ohne Suffix!
+    # Das ist wichtig, weil Streamlit Widgets mit ihren Keys cached
+    for version in range(10):  # Check versions 0-9
+        for i in range(20):
+            for key_prefix in ["color_pick_", "lines_", "darkness_"]:
+                # Lösche Keys ohne Suffix
+                key = f"{key_prefix}{i}"
+                if key in st.session_state:
+                    del st.session_state[key]
+                # Lösche Keys mit alten Versionen
+                old_key = f"{key_prefix}{i}_v{version}"
+                if old_key in st.session_state:
+                    del st.session_state[old_key]
+    
+    # Anzahl Farben aktualisieren
+    try:
+        st.session_state["num_colors_input"] = len(palette)
+    except Exception:
+        pass
+
 # Vorschlag / Button für Linienverteilung (immer sichtbar, mit Fallback)
 st.subheader("Vorgeschlagene Linienverteilung")
 
@@ -1073,58 +1136,6 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
         obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
         try:
             decompose_image(obj, n_lines_total=n_lines_total_input)
-            
-            # Button zum Übernehmen NACH decompose_image
-            if st.button("📝 Vorschlag übernehmen", key="apply_suggestion_to_ui"):
-                palette = data["palette"]
-                histogram = data["color_histogram"]
-                
-                # Berechne Linienzahlen basierend auf Histogram
-                suggested_lines = [max(100, int(h * n_lines_total_input)) for h in histogram]
-                
-                # Fix rounding
-                remainder = n_lines_total_input - sum(suggested_lines)
-                if remainder != 0:
-                    try:
-                        sums = [sum(c) for c in palette]
-                        darkest_idx = sums.index(max(sums))
-                    except:
-                        darkest_idx = 0
-                    suggested_lines[darkest_idx] += remainder
-                
-                # Inkrementiere Widget-Version Counter
-                current_version = st.session_state.get("widget_version", 0)
-                new_version = current_version + 1
-                st.session_state["widget_version"] = new_version
-                widget_suffix = f"_v{new_version}"
-                
-                # Setze die neuen Werte mit dem NEUEN Widget-Suffix
-                for i in range(len(palette)):
-                    color = palette[i]
-                    # Color picker
-                    hex_col = f"#{int(color[0]):02x}{int(color[1]):02x}{int(color[2]):02x}"
-                    st.session_state[f"color_pick_{i}{widget_suffix}"] = hex_col
-                    
-                    # Lines
-                    st.session_state[f"lines_{i}{widget_suffix}"] = suggested_lines[i]
-                    
-                    # Darkness (default)
-                    st.session_state[f"darkness_{i}{widget_suffix}"] = 0.17
-                
-                # Lösche alle alten Widget-Keys (ohne suffix)
-                for i in range(20):
-                    for key_prefix in ["color_pick_", "lines_", "darkness_"]:
-                        key = f"{key_prefix}{i}"
-                        if key in st.session_state:
-                            del st.session_state[key]
-
-                # WICHTIG: Anzahl Farben im Sidebar synchronisieren
-                try:
-                    st.session_state["num_colors_input"] = len(palette)
-                except Exception:
-                    pass
-                
-                st.rerun()
         except Exception as e:
             st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
     else:
@@ -1144,6 +1155,13 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
         except Exception as e:
             st.error(f"Keine ausreichenden Daten für eine Schätzung vorhanden: {e}")
             st.write("Hinweis: Die echte Histogramm-basierte Auswertung wird nur angezeigt, wenn das erzeugende Img-Objekt ein Attribut `color_histogram` liefert und dieses beim Generieren in `st.session_state.decompose_data` gespeichert wurde.")
+
+# Button zum Übernehmen - NICHT verschachtelt!
+st.button(
+    "📝 Vorschlag übernehmen",
+    key="apply_suggestion_to_ui",
+    on_click=apply_suggestion_callback
+)
     # # Show embed code for Squarespace
     # st.subheader("Embed Code for Squarespace")
     # st.text_area("Copy this code into a Code Block in Squarespace:", st.session_state.generated_html, height=200)
