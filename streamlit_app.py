@@ -710,7 +710,8 @@ with st.sidebar:
 
         group_orders = st.text_input(
             "Group Orders",
-            value=preset_group_orders or "4",
+            value=st.session_state.get("suggested_group_order") or preset_group_orders or "4",
+            key="group_orders_input",
             help="""Sequence we'll use to layer the colored lines onto the image. If this is a comma-separated list of integers, they are interpreted as the indices of colors you've listed, e.g. if our colors were white, red and black then '1,2,1,2,3' means we'd add half the white lines (1), then half the red lines (2), then half the white again (1), then half the red again (2), then all the black lines on top (3). Alternatively, if you just enter a single number then this will be interpreted as a number of loops over all colors, e.g. for three colors, '4' would be interpreted as the sequence '1,2,3,1,2,3,1,2,3,1,2,3'.
 
 We have 2 main tips here: firstly make sure to include enough loops so that no one color dominates the other colors by going on top and masking them all, and secondly make sure the darker colors are on top since this looks a lot better (in particular, we strongly recommend having black on top).
@@ -1091,6 +1092,58 @@ def apply_suggestion_callback():
         except:
             darkest_idx = 0
         suggested_lines[darkest_idx] += remainder
+    
+    # === Berechne intelligente Group Order ===
+    # Strategie: Erstelle Sequenz von hell nach dunkel für bessere Tiefe
+    # Mehrere Durchläufe, damit keine Farbe dominiert
+    # Dunklere Farben (besonders schwarz) öfter am Ende
+    
+    # Berechne Luminanz für jede Farbe (0.299*R + 0.587*G + 0.114*B)
+    luminances = []
+    for color in palette:
+        lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+        luminances.append(lum)
+    
+    # Sortiere Farben nach Luminanz (hell -> dunkel)
+    # Das gibt uns die optimale Reihenfolge (helle unten, dunkle oben)
+    sorted_indices = sorted(range(len(palette)), key=lambda i: luminances[i], reverse=True)
+    
+    # Erstelle Group Order: 1-basiert!
+    num_colors = len(palette)
+    
+    # Basis-Sequenz: Alle Farben von hell nach dunkel
+    base_sequence = [idx + 1 for idx in sorted_indices]  # +1 weil 1-basiert
+    
+    # Anzahl der Basis-Loops basierend auf Farbanzahl
+    if num_colors <= 2:
+        num_loops = 4  # Wenige Farben -> mehr Loops
+    elif num_colors <= 4:
+        num_loops = 4
+    elif num_colors <= 6:
+        num_loops = 3
+    else:
+        num_loops = 2  # Viele Farben -> weniger Loops
+    
+    # Erstelle Sequenz mit mehreren Durchläufen
+    group_order_list = []
+    for loop in range(num_loops):
+        group_order_list.extend(base_sequence)
+    
+    # Extra: Dunkelste Farbe(n) nochmal am Ende hinzufügen für Tiefe
+    # Finde die dunkelsten 1-2 Farben (max 2, aber mindestens 1)
+    num_darkest = min(2, num_colors)
+    darkest_indices = sorted(range(len(palette)), key=lambda i: luminances[i])[:num_darkest]
+    
+    # Füge dunkelste Farben extra am Ende hinzu (2-3x)
+    for idx in darkest_indices:
+        group_order_list.append(idx + 1)  # +1 weil 1-basiert
+        group_order_list.append(idx + 1)
+    
+    # Konvertiere zu String
+    suggested_group_order = ",".join(map(str, group_order_list))
+    
+    # Speichere in session_state
+    st.session_state["suggested_group_order"] = suggested_group_order
     
     # Inkrementiere Widget-Version Counter
     current_version = st.session_state.get("widget_version", 0)
