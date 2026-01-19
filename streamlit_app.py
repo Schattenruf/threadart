@@ -1117,12 +1117,6 @@ def apply_suggestion_callback():
                 old_key = f"{key_prefix}{i}_v{version}"
                 if old_key in st.session_state:
                     del st.session_state[old_key]
-    
-    # Anzahl Farben aktualisieren
-    try:
-        st.session_state["num_colors_input"] = len(palette)
-    except Exception:
-        pass
 
 # Vorschlag / Button für Linienverteilung (immer sichtbar, mit Fallback)
 st.subheader("Vorgeschlagene Linienverteilung")
