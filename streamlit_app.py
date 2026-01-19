@@ -708,9 +708,12 @@ with st.sidebar:
             help="Amount we blur the monochrome images when we split them off from the main image. You can try increasing this if the lines seem too sharp and you want the color gradients to be smoother, but mostly this doesn't have a big effect on the final output.",
         )
 
+        # Initialize group_orders in session_state if not set
+        if "group_orders_input" not in st.session_state:
+            st.session_state["group_orders_input"] = preset_group_orders or "4"
+        
         group_orders = st.text_input(
             "Group Orders",
-            value=st.session_state.get("suggested_group_order") or preset_group_orders or "4",
             key="group_orders_input",
             help="""Sequence we'll use to layer the colored lines onto the image. If this is a comma-separated list of integers, they are interpreted as the indices of colors you've listed, e.g. if our colors were white, red and black then '1,2,1,2,3' means we'd add half the white lines (1), then half the red lines (2), then half the white again (1), then half the red again (2), then all the black lines on top (3). Alternatively, if you just enter a single number then this will be interpreted as a number of loops over all colors, e.g. for three colors, '4' would be interpreted as the sequence '1,2,3,1,2,3,1,2,3,1,2,3'.
 
@@ -1101,7 +1104,8 @@ if st.session_state.get("all_found_colors"):
                     "palette": selected_colors,
                     "color_histogram": selected_hists
                 }
-                st.session_state["suggested_group_order"] = suggested_group_order
+                # Update group_orders widget mit vorgeschlagener Sequenz
+                st.session_state["group_orders_input"] = suggested_group_order
                 
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
