@@ -1104,8 +1104,8 @@ if st.session_state.get("all_found_colors"):
                     "palette": selected_colors,
                     "color_histogram": selected_hists
                 }
-                # Update group_orders widget mit vorgeschlagener Sequenz
-                st.session_state["group_orders_input"] = suggested_group_order
+                # Speichere Group Order Vorschlag in separatem Key (nicht das Widget selbst)
+                st.session_state["suggested_group_order"] = suggested_group_order
                 
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
@@ -1210,6 +1210,9 @@ def apply_suggestion_callback():
     
     # Update num_colors widget to show correct number
     st.session_state["num_colors_input"] = len(palette)
+    
+    # Update group_orders widget mit vorgeschlagener Sequenz
+    st.session_state["group_orders_input"] = st.session_state.get("suggested_group_order", preset_group_orders or "4")
     
     # Lösche ALLE alten Widget-Keys - mit UND ohne Suffix!
     # Das ist wichtig, weil Streamlit Widgets mit ihren Keys cached
