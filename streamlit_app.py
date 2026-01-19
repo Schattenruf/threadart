@@ -1057,7 +1057,7 @@ if st.session_state.get("all_found_colors"):
                 }
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
-                st.success(f"✅ {len(selected_colors)} Farben gewählt!")
+                st.rerun()
             else:
                 st.warning("⚠️ Wähle mindestens eine Farbe!")
 
@@ -1137,6 +1137,9 @@ n_lines_total_input = st.number_input(
 )
 
 if st.button("Vorschlag anzeigen", key="show_decompose_global"):
+    # Setze Flag dass Vorschlag angezeigt wurde
+    st.session_state["suggestion_displayed"] = True
+    
     if st.session_state.get("decompose_data"):
         data = st.session_state.decompose_data
         obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
@@ -1162,12 +1165,13 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
             st.error(f"Keine ausreichenden Daten für eine Schätzung vorhanden: {e}")
             st.write("Hinweis: Die echte Histogramm-basierte Auswertung wird nur angezeigt, wenn das erzeugende Img-Objekt ein Attribut `color_histogram` liefert und dieses beim Generieren in `st.session_state.decompose_data` gespeichert wurde.")
 
-# Button zum Übernehmen - NICHT verschachtelt!
-st.button(
-    "📝 Vorschlag übernehmen",
-    key="apply_suggestion_to_ui",
-    on_click=apply_suggestion_callback
-)
+# Button zum Übernehmen - nur anzeigen wenn Vorschlag angezeigt wurde
+if st.session_state.get("suggestion_displayed", False):
+    st.button(
+        "📝 Vorschlag übernehmen",
+        key="apply_suggestion_to_ui",
+        on_click=apply_suggestion_callback
+    )
     # # Show embed code for Squarespace
     # st.subheader("Embed Code for Squarespace")
     # st.text_area("Copy this code into a Code Block in Squarespace:", st.session_state.generated_html, height=200)
