@@ -1,4 +1,5 @@
 import base64
+import json
 import gc
 import io
 import os
@@ -955,13 +956,34 @@ if generate_button:
             # Create image object
             my_img = Img(args)
 
-        # Get the line dictionary (using progress bar)
+        # Get the line dictionary (using progress bar) and capture full draw sequence
         line_dict = defaultdict(list)
+        line_sequence = []
         total_lines = sum(my_img.args.n_lines_per_color)
         progress_bar = st.progress(0, text="Generating lines...")
         progress_count = 0
         for color, i, j in my_img.create_canvas_generator():
+            # Per-color aggregation
             line_dict[color].append((i, j))
+            # Sequence with color + pins
+            try:
+                color_tuple = tuple(int(x) for x in color)
+            except Exception:
+                color_tuple = (int(color[0]), int(color[1]), int(color[2]))
+            hex_col = f"#{color_tuple[0]:02x}{color_tuple[1]:02x}{color_tuple[2]:02x}"
+            try:
+                color_index_0 = my_img.args.palette.index(color_tuple)
+            except ValueError:
+                # Fallback: match by nearest
+                color_index_0 = 0
+            line_sequence.append({
+                "step": progress_count + 1,
+                "color_index": color_index_0 + 1,  # 1-based for human readability
+                "color_hex": hex_col,
+                "rgb": list(color_tuple),
+                "from_pin": int(i),
+                "to_pin": int(j),
+            })
             progress_count += 1
             progress_bar.progress(progress_count / total_lines, text="Generating lines...")
 
@@ -981,6 +1003,8 @@ if generate_button:
         # Store the generated HTML, and delete what we don't need any more
         st.session_state.generated_html = html_content
         st.session_state.sf = my_img.y / my_img.x
+        # Store sequence for export
+        st.session_state.line_sequence = line_sequence
 
         # Versuche, echte Palette/Historgrammdaten vom my_img Objekt zu speichern (falls vorhanden).
         try:
@@ -1025,6 +1049,33 @@ if st.session_state.generated_html:
     b64_html = base64.b64encode(st.session_state.generated_html.encode()).decode()
     href_html = f'<a href="data:text/html;base64,{b64_html}" download="{name}.html">Download HTML File</a>'
     st.markdown(href_html, unsafe_allow_html=True)
+
+    # Export line sequence (CSV / JSON)
+    if st.session_state.get("line_sequence"):
+        seq = st.session_state.line_sequence
+        # CSV
+        import io as _io
+        csv_buf = _io.StringIO()
+        csv_buf.write("step,color_index,color_hex,r,g,b,from_pin,to_pin\n")
+        for row in seq:
+            r, g, b = row["rgb"]
+            csv_buf.write(f"{row['step']},{row['color_index']},{row['color_hex']},{r},{g},{b},{row['from_pin']},{row['to_pin']}\n")
+        csv_bytes = csv_buf.getvalue().encode("utf-8")
+        st.download_button(
+            label="Export Line Sequence (CSV)",
+            data=csv_bytes,
+            file_name=f"{name or 'thread_art'}_sequence.csv",
+            mime="text/csv",
+        )
+
+        # JSON
+        json_bytes = json.dumps(seq, ensure_ascii=False, indent=2).encode("utf-8")
+        st.download_button(
+            label="Export Line Sequence (JSON)",
+            data=json_bytes,
+            file_name=f"{name or 'thread_art'}_sequence.json",
+            mime="application/json",
+        )
 # === Gefundene Farben - Ausklappbarer Bereich (nur bei Custom Upload) ===
 if st.session_state.get("all_found_colors"):
     # Initialisiere expanded state falls nicht vorhanden
