@@ -611,6 +611,19 @@ with st.sidebar:
                         # normalize palette items to tuples of ints
                         suggested_palette = [tuple(map(int, c)) for c in pl]
 
+                        # Validate histogram format - ensure it's a list of numbers
+                        try:
+                            # If hl contains dicts or tuples, extract 'percent' field or first element
+                            if hl and isinstance(hl[0], dict):
+                                hl = [item.get('percent', 0) for item in hl]
+                            elif hl and isinstance(hl[0], (list, tuple)):
+                                hl = [float(item[0]) if item else 0 for item in hl]
+                            # Ensure all elements are numbers
+                            hl = [float(h) if not isinstance(h, (list, tuple, dict)) else 0 for h in hl]
+                        except Exception:
+                            # Fallback: distribute evenly if histogram is invalid
+                            hl = [1.0 / len(suggested_palette)] * len(suggested_palette)
+
                         # compute suggested lines; avoid zeros
                         suggested_lines = [max(100, int(h * DEFAULT_TOTAL_SUGGESTED_LINES)) for h in hl]
 
@@ -1132,6 +1145,16 @@ def apply_suggestion_callback():
     palette = data["palette"]
     histogram = data["color_histogram"]
     n_lines_total = st.session_state.get("decompose_total_lines_input", 10000)
+    
+    # Validate and normalize histogram to list of numbers
+    try:
+        if histogram and isinstance(histogram[0], dict):
+            histogram = [item.get('percent', 0) for item in histogram]
+        elif histogram and isinstance(histogram[0], (list, tuple)):
+            histogram = [float(item[0]) if item else 0 for item in histogram]
+        histogram = [float(h) if not isinstance(h, (list, tuple, dict)) else 0 for h in histogram]
+    except Exception:
+        histogram = [1.0 / len(palette)] * len(palette)
     
     # Berechne Linienzahlen basierend auf Histogram
     suggested_lines = [max(100, int(h * n_lines_total)) for h in histogram]
