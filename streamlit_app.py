@@ -831,8 +831,10 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
 
         with col2:
             # Lese von session_state mit dem aktuellen suffix
-            lines_default = n_lines[i]
+            # Stelle sicher, dass der Wert nie unter dem Widget-Minimum liegt
+            lines_default = max(100, int(n_lines[i]))
             lines_from_state = st.session_state.get(f"lines_{i}{widget_suffix}", lines_default)
+            lines_from_state = max(100, int(lines_from_state))
             lines = st.number_input(
                 "Lines",
                 min_value=100,
