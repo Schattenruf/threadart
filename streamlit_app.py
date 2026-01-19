@@ -517,11 +517,15 @@ with st.sidebar:
     preset_step_size = demo_presets[demo_option].get("step_size", None)
 
     # Number of Colors (user control). Placed BEFORE image quantize so suggestions can read it.
+    # Prefer session_state value (set by "Vorschlag übernehmen"), otherwise use preset
+    default_num_colors = (len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3)
+    num_colors_value = st.session_state.get("num_colors_input", default_num_colors)
+    
     num_colors = st.number_input(
         "Number of Colors",
         min_value=1,
         max_value=10,
-        value=(len(preset_palette) if (preset_palette and isinstance(preset_palette, (list, tuple))) else 3),
+        value=num_colors_value,
         key="num_colors_input",
         help="We recommend always including black and white, as well as between 1 and 4 other colors depending on your image.",
     )
