@@ -1157,17 +1157,40 @@ def apply_suggestion_callback():
         histogram = [1.0 / len(palette)] * len(palette)
     
     # Berechne Linienzahlen basierend auf Histogram
-    suggested_lines = [max(100, int(h * n_lines_total)) for h in histogram]
+    # Erste Berechnung ohne min-Clamping
+    raw_lines = [int(h * n_lines_total) for h in histogram]
     
-    # Fix rounding
-    remainder = n_lines_total - sum(suggested_lines)
+    # Clamp auf minimum 100
+    suggested_lines = [max(100, lines) for lines in raw_lines]
+    
+    # Berechne Remainder NUR basierend auf raw_lines (vor Clamping)
+    # Dann verteile diesen auf die größeren Farben proportional
+    raw_total = sum(raw_lines)
+    remainder = n_lines_total - raw_total
+    
     if remainder != 0:
-        try:
-            sums = [sum(c) for c in palette]
-            darkest_idx = sums.index(max(sums))
-        except:
-            darkest_idx = 0
-        suggested_lines[darkest_idx] += remainder
+        # Verteile Remainder proportional auf Farben die > 100 raw_lines haben
+        large_indices = [i for i, r in enumerate(raw_lines) if r > 100]
+        if large_indices:
+            # Proportionale Verteilung auf große Farben
+            large_total = sum(raw_lines[i] for i in large_indices)
+            for i in large_indices:
+                proportion = raw_lines[i] / large_total
+                suggested_lines[i] += int(remainder * proportion)
+            # Rest auf dunkelste große Farbe
+            final_remainder = n_lines_total - sum(suggested_lines)
+            if final_remainder != 0:
+                sums = [sum(palette[i]) for i in large_indices]
+                darkest_large_idx = large_indices[sums.index(max(sums))]
+                suggested_lines[darkest_large_idx] += final_remainder
+        else:
+            # Alle Farben sind klein - verteile auf dunkelste
+            try:
+                sums = [sum(c) for c in palette]
+                darkest_idx = sums.index(max(sums))
+            except:
+                darkest_idx = 0
+            suggested_lines[darkest_idx] += remainder
     
     # === Berechne intelligente Group Order ===
     # Strategie: Erstelle Sequenz von hell nach dunkel für bessere Tiefe
