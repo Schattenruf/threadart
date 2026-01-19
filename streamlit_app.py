@@ -1070,16 +1070,63 @@ if st.session_state.get("all_found_colors"):
         
         # Button zum generieren
         if st.button("✨ Vorschlag generieren"):
+            # === Intelligente Prozentverteilung: Nicht-gewählte Farben auf nächste gewählte verteilen ===
+            
+            # Gruppiere nach Kategorie
+            category_groups = {}  # {category: [(color_idx, color_info, selected), ...]}
+            for color_idx, (category, color_info) in enumerate(st.session_state.all_found_colors):
+                if category not in category_groups:
+                    category_groups[category] = []
+                is_selected = st.session_state.color_checkbox_states[color_idx]
+                category_groups[category].append((color_idx, color_info, is_selected))
+            
+            # Verteile nicht-gewählte Prozente auf nächste gewählte innerhalb jeder Kategorie
+            adjusted_percents = {}  # {color_idx: adjusted_percent}
+            
+            for category, items in category_groups.items():
+                # Sortiere nach Prozent (absteigend)
+                items_sorted = sorted(items, key=lambda x: x[1]['percent'], reverse=True)
+                
+                selected_items = [(idx, info) for idx, info, sel in items_sorted if sel]
+                
+                if not selected_items:
+                    continue
+                
+                # Für jede gewählte Farbe: Starte mit ihrem Original-Prozent
+                for idx, info in selected_items:
+                    adjusted_percents[idx] = info['percent']
+                
+                # Für jede nicht-gewählte Farbe: Finde nächste gewählte und addiere
+                for idx, info, sel in items_sorted:
+                    if sel:
+                        continue  # Überspringe gewählte
+                    
+                    # Finde nächste gewählte Farbe (größer oder gleich)
+                    target_idx = None
+                    for sel_idx, sel_info in selected_items:
+                        if sel_info['percent'] >= info['percent']:
+                            target_idx = sel_idx
+                            break
+                    
+                    # Wenn keine größere gefunden, nimm die kleinste gewählte
+                    if target_idx is None and selected_items:
+                        target_idx = selected_items[-1][0]  # Letzte (kleinste) gewählte
+                    
+                    # Addiere nicht-gewählten Prozent auf Ziel
+                    if target_idx is not None:
+                        adjusted_percents[target_idx] += info['percent']
+            
+            # Erstelle finale Listen
             selected_colors = []
             selected_hists = []
             
-            for color_idx, (category, color_info) in enumerate(st.session_state.all_found_colors):
-                if st.session_state.color_checkbox_states[color_idx]:
-                    selected_colors.append(color_info['rgb'])
-                    selected_hists.append(color_info['percent'])
+            for color_idx in adjusted_percents:
+                category, color_info = st.session_state.all_found_colors[color_idx]
+                selected_colors.append(color_info['rgb'])
+                selected_hists.append(adjusted_percents[color_idx])
             
             if selected_colors:
-                # Normalize
+                # Normalisiere auf Summe = 1.0
                 total = sum(selected_hists)
                 if total > 0:
                     selected_hists = [h / total for h in selected_hists]
@@ -1157,40 +1204,48 @@ def apply_suggestion_callback():
         histogram = [1.0 / len(palette)] * len(palette)
     
     # Berechne Linienzahlen basierend auf Histogram
-    # Erste Berechnung ohne min-Clamping
-    raw_lines = [int(h * n_lines_total) for h in histogram]
+    # Strategie: Kleine Farben auf 100 fixieren, Rest proportional verteilen
     
-    # Clamp auf minimum 100
-    suggested_lines = [max(100, lines) for lines in raw_lines]
+    MIN_LINES = 100
+    raw_lines = [h * n_lines_total for h in histogram]
     
-    # Berechne Remainder NUR basierend auf raw_lines (vor Clamping)
-    # Dann verteile diesen auf die größeren Farben proportional
-    raw_total = sum(raw_lines)
-    remainder = n_lines_total - raw_total
+    # Identifiziere kleine und große Farben
+    small_indices = [i for i, r in enumerate(raw_lines) if r < MIN_LINES]
+    large_indices = [i for i, r in enumerate(raw_lines) if r >= MIN_LINES]
     
-    if remainder != 0:
-        # Verteile Remainder proportional auf Farben die > 100 raw_lines haben
-        large_indices = [i for i, r in enumerate(raw_lines) if r > 100]
-        if large_indices:
-            # Proportionale Verteilung auf große Farben
-            large_total = sum(raw_lines[i] for i in large_indices)
+    suggested_lines = [0] * len(histogram)
+    
+    # Fixiere kleine Farben auf MIN_LINES
+    small_lines_total = len(small_indices) * MIN_LINES
+    for i in small_indices:
+        suggested_lines[i] = MIN_LINES
+    
+    # Verteile verbleibende Linien proportional auf große Farben
+    if large_indices:
+        remaining_lines = n_lines_total - small_lines_total
+        large_histogram_sum = sum(histogram[i] for i in large_indices)
+        
+        if large_histogram_sum > 0:
             for i in large_indices:
-                proportion = raw_lines[i] / large_total
-                suggested_lines[i] += int(remainder * proportion)
-            # Rest auf dunkelste große Farbe
+                proportion = histogram[i] / large_histogram_sum
+                suggested_lines[i] = int(proportion * remaining_lines)
+            
+            # Füge Rundungs-Remainder zur dunkelsten großen Farbe hinzu
             final_remainder = n_lines_total - sum(suggested_lines)
             if final_remainder != 0:
                 sums = [sum(palette[i]) for i in large_indices]
                 darkest_large_idx = large_indices[sums.index(max(sums))]
                 suggested_lines[darkest_large_idx] += final_remainder
         else:
-            # Alle Farben sind klein - verteile auf dunkelste
-            try:
-                sums = [sum(c) for c in palette]
-                darkest_idx = sums.index(max(sums))
-            except:
-                darkest_idx = 0
-            suggested_lines[darkest_idx] += remainder
+            # Fallback: gleichmäßig verteilen
+            per_color = remaining_lines // len(large_indices)
+            for i in large_indices:
+                suggested_lines[i] = per_color
+            suggested_lines[large_indices[0]] += remaining_lines - (per_color * len(large_indices))
+    else:
+        # Alle Farben sind klein - nutze ursprüngliche Proportionen
+        for i in range(len(histogram)):
+            suggested_lines[i] = max(MIN_LINES, int(histogram[i] * n_lines_total))
     
     # === Berechne intelligente Group Order ===
     # Strategie: Erstelle Sequenz von hell nach dunkel für bessere Tiefe
