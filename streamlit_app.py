@@ -1068,7 +1068,15 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                         darkest_idx = 0
                     suggested_lines[darkest_idx] += remainder
                 
-                # Aktualisiere session_state für alle Color-Picker-Widgets
+                # KRITISCH: Lösche ALLE alten Widget-Keys aus session_state (bis zu 20)
+                # Dies zwingt Streamlit, die Widgets komplett neu zu initialisieren
+                for i in range(20):
+                    for key_prefix in ["color_pick_", "lines_", "darkness_"]:
+                        key = f"{key_prefix}{i}"
+                        if key in st.session_state:
+                            del st.session_state[key]
+                
+                # JETZT setze die neuen Werte
                 for i in range(len(palette)):
                     color = palette[i]
                     # Color picker
@@ -1087,7 +1095,6 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
                 except Exception:
                     pass
                 
-                st.success(f"✅ {len(palette)} Farben mit Linienzahlen übernommen!")
                 st.rerun()
         except Exception as e:
             st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
