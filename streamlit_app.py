@@ -654,10 +654,11 @@ with st.sidebar:
             # WICHTIG: Nur ausführen wenn NICHT durch "Vorschlag generieren" Button befüllt wurde
             # (User soll explizit "Vorschlag übernehmen" klicken)
         try:
-            # Check ob dies eine automatische Prefill-Situation ist (Demo/Upload) und NICHT durch Button
+            # Prefill nur wenn nicht durch "Vorschlag generieren" ausgelöst
+            skip_prefill = st.session_state.get("skip_prefill_after_suggestion", False)
             is_from_button = st.session_state.get("decompose_data") and not preset_palette
             
-            if 'preset_palette' in locals() and preset_palette and not is_from_button:
+            if 'preset_palette' in locals() and preset_palette and not is_from_button and not skip_prefill:
                 for i, col in enumerate(preset_palette):
                     # color picker expects hex string
                     hex_col = f"#{int(col[0]):02x}{int(col[1]):02x}{int(col[2]):02x}"
@@ -1228,6 +1229,8 @@ if st.session_state.get("all_found_colors"):
                 }
                 # Speichere Group Order Vorschlag in separatem Key (nicht das Widget selbst)
                 st.session_state["suggested_group_order"] = suggested_group_order
+                # Flag setzen: nach Vorschlag generieren kein automatisches Prefill
+                st.session_state["skip_prefill_after_suggestion"] = True
                 
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
@@ -1406,6 +1409,8 @@ def apply_suggestion_callback():
     
     # Update group_orders widget mit vorgeschlagener Sequenz
     st.session_state["group_orders_input"] = st.session_state.get("suggested_group_order", preset_group_orders or "4")
+    # Prefill-Flag zurücksetzen, da jetzt bewusst übernommen wurde
+    st.session_state["skip_prefill_after_suggestion"] = False
     
     # Lösche ALLE alten Widget-Keys - mit UND ohne Suffix!
     # Das ist wichtig, weil Streamlit Widgets mit ihren Keys cached
