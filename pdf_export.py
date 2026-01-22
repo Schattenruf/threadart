@@ -336,51 +336,65 @@ class ThreadArtPDFGenerator:
         x_idx, y_idx = 0, 0
         
         for instruction in instructions:
-            if x_idx >= num_cols:
-                x_idx = 0
+            try:
+                # Ensure instruction is a dict
+                if not isinstance(instruction, dict):
+                    print(f"Warning: Skipping non-dict instruction: {type(instruction)}")
+                    continue
+                
+                if x_idx >= num_cols:
+                    x_idx = 0
+                    y_idx += 1
+                
+                if y_idx >= num_rows:
+                    c.save()
+                    return
+                
+                x = x_positions[x_idx]
+                y = y_start - (y_idx + 1) * row_height
+                
+                instr_type = instruction.get("type", "unknown")
+                
+                if instr_type == "header":
+                    c.setFont(self.font_name, 8)
+                    c.drawString(x, y, str(instruction.get("text", "")))
+                
+                elif instr_type == "info":
+                    c.setFont(self.font_name, 8)
+                    c.setFillColor(gray)
+                    c.drawString(x, y, str(instruction.get("text", "")))
+                    c.setFillColor(black)
+                
+                elif instr_type == "color_header":
+                    c.setFont(self.font_name, 10)
+                    c.drawString(x, y, str(instruction.get("text", "")))
+                
+                elif instr_type == "instruction":
+                    c.setFont(self.font_name, self.font_size)
+                    c.drawString(x, y, f"From: {instruction.get('from', 'N/A')}")
+                    c.setFont(self.font_name, self.font_size - 1)
+                    c.setFillColor(blue)
+                    c.drawString(x + 1.5 * cm, y - 0.4 * cm, f"To: {instruction.get('to', 'N/A')}")
+                    c.setFillColor(black)
+                    y_idx += 1
+                
+                elif instr_type == "footer":
+                    c.setFont(self.font_name, 8)
+                    c.setFillColor(gray)
+                    c.drawString(x, y, str(instruction.get("text", "")))
+                    c.setFillColor(black)
+                
+                elif instr_type == "spacer":
+                    y_idx += 1
+                
                 y_idx += 1
-            
-            if y_idx >= num_rows:
-                c.save()
-                return
-            
-            x = x_positions[x_idx]
-            y = y_start - (y_idx + 1) * row_height
-            
-            if instruction["type"] == "header":
-                c.setFont(self.font_name, 8)
-                c.drawString(x, y, instruction["text"])
-            
-            elif instruction["type"] == "info":
-                c.setFont(self.font_name, 8)
-                c.setFillColor(gray)
-                c.drawString(x, y, instruction["text"])
-                c.setFillColor(black)
-            
-            elif instruction["type"] == "color_header":
-                c.setFont(self.font_name, 10)
-                c.drawString(x, y, instruction["text"])
-            
-            elif instruction["type"] == "instruction":
-                c.setFont(self.font_name, self.font_size)
-                c.drawString(x, y, f"From: {instruction['from']}")
-                c.setFont(self.font_name, self.font_size - 1)
-                c.setFillColor(blue)
-                c.drawString(x + 1.5 * cm, y - 0.4 * cm, f"To: {instruction['to']}")
-                c.setFillColor(black)
-                y_idx += 1
-            
-            elif instruction["type"] == "footer":
-                c.setFont(self.font_name, 8)
-                c.setFillColor(gray)
-                c.drawString(x, y, instruction["text"])
-                c.setFillColor(black)
-            
-            elif instruction["type"] == "spacer":
-                y_idx += 1
-            
-            y_idx += 1
-            x_idx = (x_idx + 1) % num_cols
+                x_idx = (x_idx + 1) % num_cols
+                
+            except Exception as e:
+                print(f"Error drawing instruction {instruction}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
         
         c.save()
     
@@ -487,6 +501,20 @@ def export_to_pdf(
         print("Install with: pip install reportlab PyPDF2")
         return None
     
+    # Debug validation
+    print(f"PDF Export Debug Info:")
+    print(f"  line_sequence type: {type(line_sequence)}, length: {len(line_sequence) if isinstance(line_sequence, (list, tuple)) else 'N/A'}")
+    if line_sequence and len(line_sequence) > 0:
+        first_entry = line_sequence[0]
+        print(f"  First entry type: {type(first_entry)}")
+        if isinstance(first_entry, dict):
+            print(f"  First entry keys: {first_entry.keys()}")
+        else:
+            print(f"  First entry content: {first_entry}")
+    print(f"  color_names: {color_names}")
+    print(f"  group_orders: {repr(group_orders)}")
+    print(f"  n_nodes: {n_nodes}")
+    
     try:
         generator = ThreadArtPDFGenerator()
         return generator.generate_pdf(
@@ -498,7 +526,8 @@ def export_to_pdf(
             **kwargs
         )
     except Exception as e:
-        print(f"Error generating PDF: {e}")
+        print(f"\n❌ Error generating PDF: {e}")
         import traceback
+        print("\nFull traceback:")
         traceback.print_exc()
         return None
