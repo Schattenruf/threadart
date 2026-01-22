@@ -297,25 +297,26 @@ class ThreadArtPDFGenerator:
                 if not group_lines:
                     continue
                 
-                # Add section header
-                instructions.append({
-                    "type": "header",
-                    "text": f"{'='*50}",
-                    "color_name": color_name,
-                    "group_num": group_idx + 1,
-                    "group_total": len(group_positions)
-                })
+                # Add section header with "By Now" and "By End" format
+                lines_at_start = lines_so_far
+                lines_at_end = lines_so_far + len(group_lines)
                 
+                # "By Now X/total"
                 instructions.append({
                     "type": "info",
-                    "text": f"Progress: {lines_so_far}/{total_lines}",
-                    "color": (100, 100, 100)
+                    "text": f"By Now {lines_at_start}/{total_lines}"
                 })
                 
+                # "By End Y/total"
+                instructions.append({
+                    "type": "info",
+                    "text": f"By End {lines_at_end}/{total_lines}"
+                })
+                
+                # "Now = color X/Y"
                 instructions.append({
                     "type": "color_header",
-                    "text": f"{color_name} ({group_idx + 1}/{len(group_positions)})",
-                    "color_hex": color_name.lower()
+                    "text": f"{color_name} {group_idx + 1}/{len(group_positions)}"
                 })
                 
                 # Add line instructions
@@ -331,10 +332,16 @@ class ThreadArtPDFGenerator:
                             print(f"  ERROR: Unexpected line_entry format: {type(line_entry)} = {line_entry}")
                             continue
                         
+                        # Get hanger info for both pins
+                        from_hanger_num, from_pos, _ = formatter.format_node(int(from_pin))
+                        to_hanger_num, to_pos, _ = formatter.format_node(int(to_pin))
+                        
                         instructions.append({
                             "type": "instruction",
-                            "from": formatter.get_hanger_display(int(from_pin)),
-                            "to": formatter.get_hanger_display(int(to_pin))
+                            "from_hanger": from_hanger_num,
+                            "to_hanger": to_hanger_num,
+                            "from_pos": from_pos,
+                            "to_pos": to_pos
                         })
                         lines_so_far += 1
                     except Exception as e:
@@ -360,73 +367,97 @@ class ThreadArtPDFGenerator:
         width: float,
         height: float
     ) -> None:
-        """Draw a single instruction page."""
+        """Draw a single instruction page with 3 main columns, each with 3 sub-columns."""
         c = canvas.Canvas(output_path, pagesize=(width, height))
         
-        # Page formatting
-        col_width = width / num_cols
-        row_height = height / num_rows
-        margin = 0.3 * cm
+        # Layout: 3 main columns
+        margin = 0.5 * cm
+        usable_width = width - 2 * margin
+        usable_height = height - 2 * margin
         
-        x_positions = [margin + i * col_width for i in range(num_cols)]
-        y_start = height - margin
+        main_col_width = usable_width / 3
+        sub_col_width = main_col_width / 3
         
-        x_idx, y_idx = 0, 0
+        # Draw vertical separators between main columns
+        c.setStrokeColor(black)
+        c.setLineWidth(1)
+        for i in range(1, 3):
+            x = margin + i * main_col_width
+            c.line(x, margin, x, height - margin)
+        
+        # Calculate positions for 9 sub-columns (3 main x 3 sub)
+        sub_col_positions = []
+        for main_idx in range(3):
+            for sub_idx in range(3):
+                x = margin + main_idx * main_col_width + sub_idx * sub_col_width + 0.1 * cm
+                sub_col_positions.append(x)
+        
+        # Start from top
+        y_current = height - margin - 0.5 * cm
+        line_height = 0.4 * cm
+        col_idx = 0
         
         for instruction in instructions:
             try:
-                # Ensure instruction is a dict
                 if not isinstance(instruction, dict):
-                    print(f"Warning: Skipping non-dict instruction: {type(instruction)}")
                     continue
-                
-                if x_idx >= num_cols:
-                    x_idx = 0
-                    y_idx += 1
-                
-                if y_idx >= num_rows:
-                    c.save()
-                    return
-                
-                x = x_positions[x_idx]
-                y = y_start - (y_idx + 1) * row_height
                 
                 instr_type = instruction.get("type", "unknown")
                 
+                # Get current column position
+                x = sub_col_positions[col_idx]
+                
+                # Check if we need a new page
+                if y_current < margin + 1 * cm:
+                    break
+                
                 if instr_type == "header":
-                    c.setFont(self.font_name, 8)
-                    c.drawString(x, y, str(instruction.get("text", "")))
+                    # Skip separator lines, just mark section start
+                    continue
                 
                 elif instr_type == "info":
-                    c.setFont(self.font_name, 8)
+                    # "By Now X/10000" format
+                    c.setFont(self.font_name, 7)
                     c.setFillColor(gray)
-                    c.drawString(x, y, str(instruction.get("text", "")))
+                    text = instruction.get("text", "")
+                    c.drawString(x, y_current, text)
                     c.setFillColor(black)
+                    y_current -= line_height
                 
                 elif instr_type == "color_header":
-                    c.setFont(self.font_name, 10)
-                    c.drawString(x, y, str(instruction.get("text", "")))
+                    # "Now = white 1/3" format
+                    c.setFont(self.font_name, 8)
+                    c.setFillColor(black)
+                    text = instruction.get("text", "")
+                    c.drawString(x, y_current, f"Now = {text}")
+                    c.setFillColor(black)
+                    y_current -= line_height * 1.2
                 
                 elif instr_type == "instruction":
-                    c.setFont(self.font_name, self.font_size)
-                    c.drawString(x, y, f"From: {instruction.get('from', 'N/A')}")
-                    c.setFont(self.font_name, self.font_size - 1)
-                    c.setFillColor(blue)
-                    c.drawString(x + 1.5 * cm, y - 0.4 * cm, f"To: {instruction.get('to', 'N/A')}")
-                    c.setFillColor(black)
-                    y_idx += 1
+                    # Compact format: "Start End L/R" on one line
+                    c.setFont(self.font_name, 7)
+                    from_hanger = instruction.get('from_hanger', 'N/A')
+                    to_hanger = instruction.get('to_hanger', 'N/A')
+                    from_pos = instruction.get('from_pos', 'L')
+                    to_pos = instruction.get('to_pos', 'R')
+                    
+                    # Format: "123 45 L" (start-hanger end-hanger position)
+                    text = f"{from_hanger:>3s} {to_hanger:>3s} {from_pos}/{to_pos}"
+                    c.drawString(x, y_current, text)
+                    y_current -= line_height
                 
                 elif instr_type == "footer":
-                    c.setFont(self.font_name, 8)
-                    c.setFillColor(gray)
-                    c.drawString(x, y, str(instruction.get("text", "")))
-                    c.setFillColor(black)
+                    # End of color group - move to next sub-column
+                    col_idx = (col_idx + 1) % 9
+                    if col_idx == 0:
+                        # Reset to top of page for next page
+                        y_current = height - margin - 0.5 * cm
+                    else:
+                        # Reset y for next sub-column
+                        y_current = height - margin - 0.5 * cm
                 
                 elif instr_type == "spacer":
-                    y_idx += 1
-                
-                y_idx += 1
-                x_idx = (x_idx + 1) % num_cols
+                    y_current -= line_height * 0.5
                 
             except Exception as e:
                 print(f"Error drawing instruction {instruction}: {e}")
