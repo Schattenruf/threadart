@@ -1101,7 +1101,8 @@ if st.session_state.generated_html:
                     
                     # Get color information with debug
                     detected_colors = st.session_state.get("all_found_colors", [])
-                    color_names = [c["color_name"] for c in detected_colors]
+                    # all_found_colors is a list of tuples: (category_name, color_info_dict)
+                    color_names = [category for category, color_info in detected_colors]
                     group_orders = st.session_state.get("group_orders", "")
                     n_nodes = st.session_state.get("n_nodes_real", 320)
                     
