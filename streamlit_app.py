@@ -651,8 +651,13 @@ with st.sidebar:
 
         # =======================================================================================================
             # Prefill widgets from suggested palette/lines if they are not already set in session_state
+            # WICHTIG: Nur ausführen wenn NICHT durch "Vorschlag generieren" Button befüllt wurde
+            # (User soll explizit "Vorschlag übernehmen" klicken)
         try:
-            if 'preset_palette' in locals() and preset_palette:
+            # Check ob dies eine automatische Prefill-Situation ist (Demo/Upload) und NICHT durch Button
+            is_from_button = st.session_state.get("decompose_data") and not preset_palette
+            
+            if 'preset_palette' in locals() and preset_palette and not is_from_button:
                 for i, col in enumerate(preset_palette):
                     # color picker expects hex string
                     hex_col = f"#{int(col[0]):02x}{int(col[1]):02x}{int(col[2]):02x}"
