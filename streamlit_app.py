@@ -1113,6 +1113,18 @@ if st.session_state.generated_html:
                         if seq and len(seq) > 0:
                             st.write(f"**First entry type**: {type(seq[0])}")
                             st.write(f"**First entry**: {seq[0]}")
+                            # Quick glance at the first 20 colors in the sequence
+                            first_colors = [row.get("color_hex", "") for row in seq[:20]]
+                            st.write(f"**First 20 color_hex**: {first_colors}")
+                            # Order of colors by first appearance (hex-based)
+                            color_order = []
+                            for row in seq:
+                                hx = str(row.get("color_hex", "")).lower()
+                                if hx and hx not in color_order:
+                                    color_order.append(hx)
+                                if len(color_order) > 20:
+                                    break
+                            st.write(f"**Color order (first appearance)**: {color_order}")
                         st.write(f"**color_names**: {color_names}")
                         st.write(f"**group_orders**: `{repr(group_orders)}`")
                         st.write(f"**n_nodes**: {n_nodes}")
