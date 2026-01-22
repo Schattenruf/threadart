@@ -228,6 +228,17 @@ class ThreadArtPDFGenerator:
         total_lines = sum(len(lines) for lines in line_dict.values())
         lines_so_far = 0
         
+        # Debug: Check structure
+        print(f"\n[DEBUG _build_instructions]")
+        print(f"  line_dict keys: {list(line_dict.keys())}")
+        print(f"  line_dict total entries: {total_lines}")
+        
+        for color_name, lines in line_dict.items():
+            if lines:
+                first_line = lines[0]
+                print(f"  {color_name}: {len(lines)} lines, first entry type={type(first_line)}, content={first_line}")
+                break
+        
         # Parse group orders with safety checks
         color_map = {i: color_names[i] for i in range(len(color_names))}
         color_groups = {}
@@ -236,6 +247,8 @@ class ThreadArtPDFGenerator:
         if not isinstance(group_orders, str):
             group_orders = str(group_orders) if group_orders else ""
         
+        print(f"  group_orders: {repr(group_orders)}")
+        
         for i, char in enumerate(group_orders):
             if char.isdigit():
                 idx = int(char)
@@ -243,6 +256,8 @@ class ThreadArtPDFGenerator:
                     if idx not in color_groups:
                         color_groups[idx] = []
                     color_groups[idx].append(i)
+        
+        print(f"  color_groups: {color_groups}")
         
         # If no groups parsed, create default grouping
         if not color_groups:
@@ -259,10 +274,17 @@ class ThreadArtPDFGenerator:
             
             # Ensure it's a list
             if not isinstance(lines_for_color, list):
+                print(f"  ERROR: lines_for_color is {type(lines_for_color)}, expected list for color {color_name}")
                 continue
             
             if not lines_for_color:
                 continue
+            
+            # Debug: Check first line
+            first_line = lines_for_color[0]
+            print(f"  Processing color {color_name}: {len(lines_for_color)} lines")
+            print(f"    First line type: {type(first_line)}")
+            print(f"    First line content: {first_line}")
             
             # Split lines into groups
             lines_per_group = len(lines_for_color) // len(group_positions) + 1
@@ -297,13 +319,29 @@ class ThreadArtPDFGenerator:
                 })
                 
                 # Add line instructions
-                for from_pin, to_pin in group_lines:
-                    instructions.append({
-                        "type": "instruction",
-                        "from": formatter.get_hanger_display(from_pin),
-                        "to": formatter.get_hanger_display(to_pin)
-                    })
-                    lines_so_far += 1
+                for line_entry in group_lines:
+                    try:
+                        # Handle both tuple and dict formats
+                        if isinstance(line_entry, tuple) and len(line_entry) >= 2:
+                            from_pin, to_pin = line_entry[0], line_entry[1]
+                        elif isinstance(line_entry, dict):
+                            from_pin = line_entry.get("from_pin", 0)
+                            to_pin = line_entry.get("to_pin", 0)
+                        else:
+                            print(f"  ERROR: Unexpected line_entry format: {type(line_entry)} = {line_entry}")
+                            continue
+                        
+                        instructions.append({
+                            "type": "instruction",
+                            "from": formatter.get_hanger_display(int(from_pin)),
+                            "to": formatter.get_hanger_display(int(to_pin))
+                        })
+                        lines_so_far += 1
+                    except Exception as e:
+                        print(f"  ERROR processing line entry {line_entry}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
                 
                 instructions.append({
                     "type": "footer",
