@@ -28,34 +28,52 @@ class PictureHangerFormatter:
     """Formats instructions for picture hangers instead of nails.
     Each hanger has two attachment points: left (0) and right (-1) or equivalent."""
     
-    def __init__(self, n_nodes: int, hanger_spacing: float = 1.0):
+    def __init__(self, n_nodes: int, hanger_spacing: float = 1.0, use_hangers: bool = True):
         """
-        Initialize formatter for picture hangers.
+        Initialize formatter for picture hangers or nails.
         
         Args:
             n_nodes: Total number of nodes/hooks
             hanger_spacing: Spacing between hangers (for display purposes)
+            use_hangers: True for hangers (2 nodes per hanger), False for nails (1 node = 1 nail)
         """
         self.n_nodes = n_nodes
         self.hanger_spacing = hanger_spacing
+        self.use_hangers = use_hangers
         self.n_hangers = (n_nodes + 1) // 2  # Each hanger has 2 attachment points
     
     def format_node(self, node_idx: int) -> Tuple[str, str, str]:
         """
-        Convert node index to hanger-friendly format.
+        Convert node index to hanger or nail format.
         
         Returns:
-            (hanger_number, position, full_label)
-            - hanger_number: Which hanger (0-indexed)
-            - position: "L" for left (0) or "R" for right (-1)
-            - full_label: Complete label like "Hanger 42 Left"
+            (number, position, full_label)
+            - For hangers: (hanger_number, "L"/"R", "Hanger 42 L")
+            - For nails: (node_number, "", "Nail 84")
         """
-        hanger_num = node_idx // 2
-        position_idx = node_idx % 2
-        position = "L" if position_idx == 0 else "R"
-        
-        label = f"Hanger {hanger_num:3d} {position}"
-        return str(hanger_num), position, label
+        if self.use_hangers:
+            hanger_num = node_idx // 2
+            position_idx = node_idx % 2
+            position = "L" if position_idx == 0 else "R"
+            label = f"Hanger {hanger_num:3d} {position}"
+            return str(hanger_num), position, label
+        else:
+            # Nail mode: 1 nail = 1 node
+            label = f"Nail {node_idx:3d}"
+            return str(node_idx), "", label
+            - For hangers: (hanger_number, "L"/"R", "Hanger 42 L")
+            - For nails: (node_number, "", "Nail 84")
+        """
+        if self.use_hangers:
+            hanger_num = node_idx // 2
+            position_idx = node_idx % 2
+            position = "L" if position_idx == 0 else "R"
+            label = f"Hanger {hanger_num:3d} {position}"
+            return str(hanger_num), position, label
+        else:
+            # Nail mode: 1 nail = 1 node
+            label = f"Nail {node_idx:3d}"
+            return str(node_idx), "", label
     
     def get_hanger_display(self, node_idx: int) -> str:
         """Get a nicely formatted display string for instructions."""
@@ -146,7 +164,8 @@ class ThreadArtPDFGenerator:
         num_cols: int = 3,
         num_rows: int = 18,
         include_stats: bool = True,
-        version: str = "n+1"
+        version: str = "n+1",
+        use_hangers: bool = True
     ) -> str:
         """
         Generate a complete PDF with instructions.
@@ -166,7 +185,7 @@ class ThreadArtPDFGenerator:
         Returns:
             Path to generated PDF
         """
-        formatter = PictureHangerFormatter(n_nodes)
+        formatter = PictureHangerFormatter(n_nodes, use_hangers=use_hangers)
         
         # Build line_dict (lines grouped by color name)
         line_dict = self._group_lines_by_color(line_sequence, color_names)

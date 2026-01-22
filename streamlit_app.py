@@ -1095,6 +1095,13 @@ if st.session_state.generated_html:
         
         # PDF Export (Picture Hangers)
         with col3:
+            # Checkbox für Haken vs Nägel
+            use_hangers = st.checkbox(
+                "🔧 Haken verwenden (statt Nägel)", 
+                value=True,
+                help="Aktiviert: 1 Haken = 2 Nodes (L/R). Deaktiviert: 1 Nagel = 1 Node"
+            )
+            
             if st.button("🖨️ Generate PDF Instructions", key="gen_pdf"):
                 try:
                     from pdf_export import export_to_pdf
@@ -1141,7 +1148,8 @@ if st.session_state.generated_html:
                         num_cols=3,
                         num_rows=18,
                         include_stats=True,
-                        version="n+1"
+                        version="n+1",
+                        use_hangers=use_hangers
                     )
                     
                     if pdf_path and os.path.exists(pdf_path):
