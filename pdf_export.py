@@ -1,0 +1,478 @@
+"""
+PDF Export Module for Thread Art Generator
+Generates printable instructions for creating thread art using picture hangers (Bilderaufhänger)
+instead of nails. Each hanger has two attachment points per hook.
+"""
+
+import os
+import math
+import numpy as np
+from pathlib import Path
+from collections import Counter
+from typing import Dict, List, Tuple, Optional
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm, inch
+    from reportlab.lib.colors import HexColor, black, gray, white, blue
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from PyPDF2 import PdfMerger, PdfReader
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+
+class PictureHangerFormatter:
+    """Formats instructions for picture hangers instead of nails.
+    Each hanger has two attachment points: left (0) and right (-1) or equivalent."""
+    
+    def __init__(self, n_nodes: int, hanger_spacing: float = 1.0):
+        """
+        Initialize formatter for picture hangers.
+        
+        Args:
+            n_nodes: Total number of nodes/hooks
+            hanger_spacing: Spacing between hangers (for display purposes)
+        """
+        self.n_nodes = n_nodes
+        self.hanger_spacing = hanger_spacing
+        self.n_hangers = (n_nodes + 1) // 2  # Each hanger has 2 attachment points
+    
+    def format_node(self, node_idx: int) -> Tuple[str, str, str]:
+        """
+        Convert node index to hanger-friendly format.
+        
+        Returns:
+            (hanger_number, position, full_label)
+            - hanger_number: Which hanger (0-indexed)
+            - position: "L" for left (0) or "R" for right (-1)
+            - full_label: Complete label like "Hanger 42 Left"
+        """
+        hanger_num = node_idx // 2
+        position_idx = node_idx % 2
+        position = "L" if position_idx == 0 else "R"
+        
+        label = f"Hanger {hanger_num:3d} {position}"
+        return str(hanger_num), position, label
+    
+    def get_hanger_display(self, node_idx: int) -> str:
+        """Get a nicely formatted display string for instructions."""
+        hanger_num, position, label = self.format_node(node_idx)
+        return label
+
+
+class ThreadArtPDFGenerator:
+    """Generates professional PDF instructions for thread art."""
+    
+    def __init__(self, font_size: int = 11, use_custom_font: bool = True):
+        """
+        Initialize PDF generator.
+        
+        Args:
+            font_size: Base font size in points
+            use_custom_font: Whether to try loading a custom TTF font
+        """
+        if not REPORTLAB_AVAILABLE:
+            raise ImportError("reportlab and PyPDF2 are required for PDF export")
+        
+        self.font_size = font_size
+        self.using_font = False
+        self.font_name = "Helvetica"
+        
+        if use_custom_font:
+            self._setup_custom_font()
+    
+    def _setup_custom_font(self) -> None:
+        """Try to setup a custom monospace font."""
+        try:
+            font_paths = [
+                'lines/courier-prime.regular.ttf',
+                'fonts/courier-prime.regular.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf'
+            ]
+            
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    pdfmetrics.registerFont(TTFont('CourierPrime', font_path))
+                    self.font_name = 'CourierPrime'
+                    self.using_font = True
+                    break
+        except Exception as e:
+            print(f"Warning: Could not load custom font: {e}")
+    
+    def generate_pdf(
+        self,
+        line_sequence: List[Dict],
+        color_names: List[str],
+        group_orders: str,
+        output_path: str,
+        n_nodes: int,
+        num_cols: int = 3,
+        num_rows: int = 18,
+        include_stats: bool = True,
+        version: str = "n+1"
+    ) -> str:
+        """
+        Generate a complete PDF with instructions.
+        
+        Args:
+            line_sequence: List of line dicts with step, color_index, from_pin, to_pin, etc.
+            color_names: List of color names
+            group_orders: String indicating the order of colors (e.g., "0011223")
+            output_path: Base output path (without extension)
+            n_nodes: Total number of nodes/attachment points
+            num_cols: Number of columns per page
+            num_rows: Number of rows per page
+            include_stats: Whether to include statistics
+            version: Version numbering ("n+1" for auto-increment, None for single, or int)
+        
+        Returns:
+            Path to generated PDF
+        """
+        formatter = PictureHangerFormatter(n_nodes)
+        
+        # Group lines by color
+        line_dict = self._group_lines_by_color(line_sequence, color_names)
+        
+        # Generate individual pages
+        page_list = self._generate_instruction_pages(
+            line_dict=line_dict,
+            group_orders=group_orders,
+            color_names=color_names,
+            formatter=formatter,
+            output_path=output_path,
+            num_cols=num_cols,
+            num_rows=num_rows
+        )
+        
+        # Merge pages into single PDF
+        final_pdf = self._merge_pages_to_pdf(page_list, output_path, version)
+        
+        # Generate statistics if requested
+        if include_stats:
+            self._generate_statistics(line_dict, formatter, output_path)
+        
+        return final_pdf
+    
+    def _group_lines_by_color(
+        self,
+        line_sequence: List[Dict],
+        color_names: List[str]
+    ) -> Dict[str, List[Tuple[int, int]]]:
+        """Group lines by color name."""
+        line_dict = {color: [] for color in color_names}
+        
+        for entry in line_sequence:
+            color_idx = entry["color_index"] - 1  # Convert to 0-based
+            if 0 <= color_idx < len(color_names):
+                color_name = color_names[color_idx]
+                line_dict[color_name].append((entry["from_pin"], entry["to_pin"]))
+        
+        return line_dict
+    
+    def _generate_instruction_pages(
+        self,
+        line_dict: Dict[str, List[Tuple[int, int]]],
+        group_orders: str,
+        color_names: List[str],
+        formatter: PictureHangerFormatter,
+        output_path: str,
+        num_cols: int,
+        num_rows: int
+    ) -> List[str]:
+        """Generate individual instruction pages."""
+        width, height = A4
+        page_list = []
+        all_instructions = self._build_instructions(
+            line_dict, group_orders, color_names, formatter
+        )
+        
+        page_counter = 0
+        while all_instructions:
+            page_instructions = all_instructions[:num_rows * num_cols]
+            all_instructions = all_instructions[num_rows * num_cols:]
+            
+            page_path = f"{output_path}_page_{page_counter:03d}.pdf"
+            self._draw_page(
+                page_path, page_instructions, num_cols, num_rows,
+                width, height
+            )
+            page_list.append(page_path)
+            page_counter += 1
+        
+        return page_list
+    
+    def _build_instructions(
+        self,
+        line_dict: Dict[str, List[Tuple[int, int]]],
+        group_orders: str,
+        color_names: List[str],
+        formatter: PictureHangerFormatter
+    ) -> List[Dict]:
+        """Build complete instruction list with color groupings."""
+        instructions = []
+        total_lines = sum(len(lines) for lines in line_dict.values())
+        lines_so_far = 0
+        
+        # Parse group orders
+        color_map = {i: color_names[i] for i in range(len(color_names))}
+        color_groups = {}
+        
+        for i, char in enumerate(group_orders):
+            if char.isdigit():
+                idx = int(char)
+                if idx not in color_groups:
+                    color_groups[idx] = []
+                color_groups[idx].append(i)
+        
+        # Generate instructions per color group
+        for idx, group_positions in sorted(color_groups.items()):
+            if idx not in color_map:
+                continue
+            
+            color_name = color_map[idx]
+            lines_for_color = line_dict.get(color_name, [])
+            
+            if not lines_for_color:
+                continue
+            
+            # Split lines into groups
+            lines_per_group = len(lines_for_color) // len(group_positions) + 1
+            
+            for group_idx, pos in enumerate(group_positions):
+                start_idx = group_idx * lines_per_group
+                end_idx = min((group_idx + 1) * lines_per_group, len(lines_for_color))
+                
+                group_lines = lines_for_color[start_idx:end_idx]
+                if not group_lines:
+                    continue
+                
+                # Add section header
+                instructions.append({
+                    "type": "header",
+                    "text": f"{'='*50}",
+                    "color_name": color_name,
+                    "group_num": group_idx + 1,
+                    "group_total": len(group_positions)
+                })
+                
+                instructions.append({
+                    "type": "info",
+                    "text": f"Progress: {lines_so_far}/{total_lines}",
+                    "color": (100, 100, 100)
+                })
+                
+                instructions.append({
+                    "type": "color_header",
+                    "text": f"{color_name} ({group_idx + 1}/{len(group_positions)})",
+                    "color_hex": color_name.lower()
+                })
+                
+                # Add line instructions
+                for from_pin, to_pin in group_lines:
+                    instructions.append({
+                        "type": "instruction",
+                        "from": formatter.get_hanger_display(from_pin),
+                        "to": formatter.get_hanger_display(to_pin)
+                    })
+                    lines_so_far += 1
+                
+                instructions.append({
+                    "type": "footer",
+                    "text": f"Completed: {color_name} group {group_idx + 1}/{len(group_positions)}"
+                })
+                instructions.append({"type": "spacer", "height": 12})
+        
+        return instructions
+    
+    def _draw_page(
+        self,
+        output_path: str,
+        instructions: List[Dict],
+        num_cols: int,
+        num_rows: int,
+        width: float,
+        height: float
+    ) -> None:
+        """Draw a single instruction page."""
+        c = canvas.Canvas(output_path, pagesize=(width, height))
+        
+        # Page formatting
+        col_width = width / num_cols
+        row_height = height / num_rows
+        margin = 0.3 * cm
+        
+        x_positions = [margin + i * col_width for i in range(num_cols)]
+        y_start = height - margin
+        
+        x_idx, y_idx = 0, 0
+        
+        for instruction in instructions:
+            if x_idx >= num_cols:
+                x_idx = 0
+                y_idx += 1
+            
+            if y_idx >= num_rows:
+                c.save()
+                return
+            
+            x = x_positions[x_idx]
+            y = y_start - (y_idx + 1) * row_height
+            
+            if instruction["type"] == "header":
+                c.setFont(self.font_name, 8)
+                c.drawString(x, y, instruction["text"])
+            
+            elif instruction["type"] == "info":
+                c.setFont(self.font_name, 8)
+                c.setFillColor(gray)
+                c.drawString(x, y, instruction["text"])
+                c.setFillColor(black)
+            
+            elif instruction["type"] == "color_header":
+                c.setFont(self.font_name, 10)
+                c.drawString(x, y, instruction["text"])
+            
+            elif instruction["type"] == "instruction":
+                c.setFont(self.font_name, self.font_size)
+                c.drawString(x, y, f"From: {instruction['from']}")
+                c.setFont(self.font_name, self.font_size - 1)
+                c.setFillColor(blue)
+                c.drawString(x + 1.5 * cm, y - 0.4 * cm, f"To: {instruction['to']}")
+                c.setFillColor(black)
+                y_idx += 1
+            
+            elif instruction["type"] == "footer":
+                c.setFont(self.font_name, 8)
+                c.setFillColor(gray)
+                c.drawString(x, y, instruction["text"])
+                c.setFillColor(black)
+            
+            elif instruction["type"] == "spacer":
+                y_idx += 1
+            
+            y_idx += 1
+            x_idx = (x_idx + 1) % num_cols
+        
+        c.save()
+    
+    def _merge_pages_to_pdf(
+        self,
+        page_list: List[str],
+        output_path: str,
+        version: str
+    ) -> str:
+        """Merge all pages into a single PDF."""
+        if not page_list:
+            raise ValueError("No pages to merge")
+        
+        merger = PdfMerger()
+        
+        for page_path in page_list:
+            try:
+                with open(page_path, "rb") as f:
+                    merger.append(PdfReader(f))
+                os.remove(page_path)
+            except Exception as e:
+                print(f"Error processing {page_path}: {e}")
+        
+        # Determine output filename
+        if version is None:
+            pdf_filename = f"{output_path}.pdf"
+        elif isinstance(version, int):
+            pdf_filename = f"{output_path}_{version:02d}.pdf"
+        elif version == "n+1":
+            version_num = 1
+            while os.path.exists(f"{output_path}_{version_num:02d}.pdf"):
+                version_num += 1
+            pdf_filename = f"{output_path}_{version_num:02d}.pdf"
+        else:
+            raise ValueError("version must be None, int, or 'n+1'")
+        
+        merger.write(pdf_filename)
+        merger.close()
+        
+        print(f"Generated PDF: {pdf_filename}")
+        return pdf_filename
+    
+    def _generate_statistics(
+        self,
+        line_dict: Dict[str, List[Tuple[int, int]]],
+        formatter: PictureHangerFormatter,
+        output_path: str
+    ) -> None:
+        """Generate statistics about the thread art."""
+        print("\n" + "="*60)
+        print("THREAD ART STATISTICS")
+        print("="*60)
+        
+        total_lines = sum(len(lines) for lines in line_dict.values())
+        print(f"Total lines: {total_lines}")
+        
+        # Lines per color
+        print("\nLines per color:")
+        for color_name, lines in sorted(line_dict.items(), key=lambda x: -len(x[1])):
+            count = len(lines)
+            percentage = (count / total_lines * 100) if total_lines > 0 else 0
+            print(f"  {color_name:20s}: {count:5d} lines ({percentage:5.1f}%)")
+        
+        # Hanger usage
+        print(f"\nTotal hangers needed: {formatter.n_hangers}")
+        
+        hanger_usage = Counter()
+        for lines in line_dict.values():
+            for from_pin, to_pin in lines:
+                hanger_usage[from_pin // 2] += 1
+                hanger_usage[to_pin // 2] += 1
+        
+        if hanger_usage:
+            avg_usage = np.mean(list(hanger_usage.values()))
+            print(f"Average lines per hanger: {avg_usage:.1f}")
+            print(f"Most used hanger: Hanger {max(hanger_usage, key=hanger_usage.get)} ({hanger_usage[max(hanger_usage, key=hanger_usage.get)]} connections)")
+            print(f"Least used hanger: Hanger {min(hanger_usage, key=hanger_usage.get)} ({hanger_usage[min(hanger_usage, key=hanger_usage.get)]} connections)")
+
+
+def export_to_pdf(
+    line_sequence: List[Dict],
+    color_names: List[str],
+    group_orders: str,
+    output_path: str,
+    n_nodes: int,
+    **kwargs
+) -> Optional[str]:
+    """
+    Convenience function to export thread art to PDF.
+    
+    Args:
+        line_sequence: List of line dicts from streamlit session
+        color_names: List of color names
+        group_orders: String of group order
+        output_path: Output file path (without extension)
+        n_nodes: Total nodes
+        **kwargs: Additional arguments for ThreadArtPDFGenerator.generate_pdf()
+    
+    Returns:
+        Path to generated PDF or None if failed
+    """
+    if not REPORTLAB_AVAILABLE:
+        print("Error: reportlab and PyPDF2 are required for PDF export")
+        print("Install with: pip install reportlab PyPDF2")
+        return None
+    
+    try:
+        generator = ThreadArtPDFGenerator()
+        return generator.generate_pdf(
+            line_sequence=line_sequence,
+            color_names=color_names,
+            group_orders=group_orders,
+            output_path=output_path,
+            n_nodes=n_nodes,
+            **kwargs
+        )
+    except Exception as e:
+        print(f"Error generating PDF: {e}")
+        import traceback
+        traceback.print_exc()
+        return None

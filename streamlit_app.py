@@ -710,6 +710,7 @@ with st.sidebar:
         )
         # Ensure n_nodes is a multiple of 4, but don't add an extra 4 when already divisible
         n_nodes_real = n_nodes if (n_nodes % 4 == 0) else n_nodes + (4 - n_nodes % 4)
+        st.session_state["n_nodes_real"] = n_nodes_real  # Store for later use in PDF export
     with col3:
         shape = st.selectbox(
             "Shape",
@@ -941,6 +942,9 @@ if generate_button:
 
     # Display a status message
     try:
+        # Store group_orders in session_state for PDF export
+        st.session_state["group_orders"] = group_orders
+        
         with st.spinner("Preprocessing (takes about 10-20 seconds) ..."):
             # Set up parameters
             args = ThreadArtColorParams(
@@ -1050,39 +1054,89 @@ if st.session_state.generated_html:
     st_html(st.session_state.generated_html, height=html_height + 150, scrolling=True)
 
     # Download options
-    st.subheader("Download Options")
+    st.subheader("📥 Download Options")
 
     # Provide HTML download
     b64_html = base64.b64encode(st.session_state.generated_html.encode()).decode()
     href_html = f'<a href="data:text/html;base64,{b64_html}" download="{name}.html">Download HTML File</a>'
     st.markdown(href_html, unsafe_allow_html=True)
 
-    # Export line sequence (CSV / JSON)
+    # Export line sequence (CSV / JSON / PDF)
     if st.session_state.get("line_sequence"):
         seq = st.session_state.line_sequence
-        # CSV
-        import io as _io
-        csv_buf = _io.StringIO()
-        csv_buf.write("step,color_index,color_hex,r,g,b,from_pin,to_pin\n")
-        for row in seq:
-            r, g, b = row["rgb"]
-            csv_buf.write(f"{row['step']},{row['color_index']},{row['color_hex']},{r},{g},{b},{row['from_pin']},{row['to_pin']}\n")
-        csv_bytes = csv_buf.getvalue().encode("utf-8")
-        st.download_button(
-            label="Export Line Sequence (CSV)",
-            data=csv_bytes,
-            file_name=f"{name or 'thread_art'}_sequence.csv",
-            mime="text/csv",
-        )
+        
+        col1, col2, col3 = st.columns(3)
+        
+        # CSV Export
+        with col1:
+            import io as _io
+            csv_buf = _io.StringIO()
+            csv_buf.write("step,color_index,color_hex,r,g,b,from_pin,to_pin\n")
+            for row in seq:
+                r, g, b = row["rgb"]
+                csv_buf.write(f"{row['step']},{row['color_index']},{row['color_hex']},{r},{g},{b},{row['from_pin']},{row['to_pin']}\n")
+            csv_bytes = csv_buf.getvalue().encode("utf-8")
+            st.download_button(
+                label="📊 CSV",
+                data=csv_bytes,
+                file_name=f"{name or 'thread_art'}_sequence.csv",
+                mime="text/csv",
+            )
 
-        # JSON
-        json_bytes = json.dumps(seq, ensure_ascii=False, indent=2).encode("utf-8")
-        st.download_button(
-            label="Export Line Sequence (JSON)",
-            data=json_bytes,
-            file_name=f"{name or 'thread_art'}_sequence.json",
-            mime="application/json",
-        )
+        # JSON Export
+        with col2:
+            json_bytes = json.dumps(seq, ensure_ascii=False, indent=2).encode("utf-8")
+            st.download_button(
+                label="📄 JSON",
+                data=json_bytes,
+                file_name=f"{name or 'thread_art'}_sequence.json",
+                mime="application/json",
+            )
+        
+        # PDF Export (Picture Hangers)
+        with col3:
+            if st.button("🖨️ Generate PDF Instructions", key="gen_pdf"):
+                try:
+                    from pdf_export import export_to_pdf
+                    
+                    # Get color information
+                    detected_colors = st.session_state.get("all_found_colors", [])
+                    color_names = [c["color_name"] for c in detected_colors]
+                    group_orders = st.session_state.get("group_orders", "")
+                    n_nodes = st.session_state.get("n_nodes_real", 320)
+                    
+                    # Generate PDF
+                    output_path = f"outputs_drawing/{name or 'thread_art'}_instructions"
+                    pdf_path = export_to_pdf(
+                        line_sequence=seq,
+                        color_names=color_names,
+                        group_orders=group_orders,
+                        output_path=output_path,
+                        n_nodes=n_nodes,
+                        num_cols=3,
+                        num_rows=18,
+                        include_stats=True,
+                        version="n+1"
+                    )
+                    
+                    if pdf_path and os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as f:
+                            pdf_data = f.read()
+                        
+                        st.download_button(
+                            label="💾 Download PDF",
+                            data=pdf_data,
+                            file_name=os.path.basename(pdf_path),
+                            mime="application/pdf",
+                        )
+                        st.success(f"✅ PDF generated: {os.path.basename(pdf_path)}")
+                    else:
+                        st.error("❌ PDF generation failed")
+                
+                except ImportError:
+                    st.error("❌ reportlab and PyPDF2 required: `pip install reportlab PyPDF2`")
+                except Exception as e:
+                    st.error(f"❌ Error generating PDF: {str(e)}")
 # === Gefundene Farben - Ausklappbarer Bereich (nur bei Custom Upload) ===
 if st.session_state.get("all_found_colors"):
     # Initialisiere expanded state falls nicht vorhanden
