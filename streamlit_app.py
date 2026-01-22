@@ -1103,6 +1103,7 @@ if st.session_state.generated_html:
                     detected_colors = st.session_state.get("all_found_colors", [])
                     # all_found_colors is a list of tuples: (category_name, color_info_dict)
                     color_names = [category for category, color_info in detected_colors]
+                    color_info_list = [color_info for category, color_info in detected_colors]
                     group_orders = st.session_state.get("group_orders", "")
                     n_nodes = st.session_state.get("n_nodes_real", 320)
                     
@@ -1121,6 +1122,7 @@ if st.session_state.generated_html:
                     pdf_path = export_to_pdf(
                         line_sequence=seq,
                         color_names=color_names,
+                        color_info_list=color_info_list,
                         group_orders=group_orders,
                         output_path=output_path,
                         n_nodes=n_nodes,

@@ -66,6 +66,34 @@ class PictureHangerFormatter:
 class ThreadArtPDFGenerator:
     """Generates professional PDF instructions for thread art."""
     
+    # Mapping of common color names to hex values
+    COLOR_MAP = {
+        'schwarz': '#000000',
+        'black': '#000000',
+        'weiß': '#FFFFFF',
+        'white': '#FFFFFF',
+        'rot': '#FF0000',
+        'red': '#FF0000',
+        'grün': '#00AA00',
+        'green': '#00AA00',
+        'blau': '#0000FF',
+        'blue': '#0000FF',
+        'gelb': '#FFFF00',
+        'yellow': '#FFFF00',
+        'orange': '#FFA500',
+        'lila': '#800080',
+        'purple': '#800080',
+        'rosa': '#FFC0CB',
+        'pink': '#FFC0CB',
+        'braun': '#8B4513',
+        'brown': '#8B4513',
+        'grau': '#808080',
+        'gray': '#808080',
+        'türkis': '#40E0D0',
+        'cyan': '#00FFFF',
+        'magenta': '#FF00FF',
+    }
+    
     def __init__(self, font_size: int = 11, use_custom_font: bool = True):
         """
         Initialize PDF generator.
@@ -102,6 +130,11 @@ class ThreadArtPDFGenerator:
         except Exception as e:
             print(f"Warning: Could not load custom font: {e}")
     
+    def _get_color_hex(self, color_name: str) -> str:
+        """Get hex color for color name. Returns black if not found."""
+        color_lower = color_name.lower()
+        return self.COLOR_MAP.get(color_lower, '#000000')
+    
     def generate_pdf(
         self,
         line_sequence: List[Dict],
@@ -109,6 +142,7 @@ class ThreadArtPDFGenerator:
         group_orders: str,
         output_path: str,
         n_nodes: int,
+        color_info_list: List[Dict] = None,
         num_cols: int = 3,
         num_rows: int = 18,
         include_stats: bool = True,
@@ -120,6 +154,7 @@ class ThreadArtPDFGenerator:
         Args:
             line_sequence: List of line dicts with step, color_index, from_pin, to_pin, etc.
             color_names: List of color names
+            color_info_list: List of color info dicts (optional, from streamlit)
             group_orders: String indicating the order of colors (e.g., "0011223")
             output_path: Base output path (without extension)
             n_nodes: Total number of nodes/attachment points
@@ -141,6 +176,7 @@ class ThreadArtPDFGenerator:
             line_dict=line_dict,
             group_orders=group_orders,
             color_names=color_names,
+            color_info_list=color_info_list,
             formatter=formatter,
             output_path=output_path,
             num_cols=num_cols,
@@ -189,30 +225,45 @@ class ThreadArtPDFGenerator:
         line_dict: Dict[str, List[Tuple[int, int]]],
         group_orders: str,
         color_names: List[str],
+        color_info_list: List[Dict],
         formatter: PictureHangerFormatter,
         output_path: str,
         num_cols: int,
         num_rows: int
     ) -> List[str]:
-        """Generate individual instruction pages."""
+        """Generate individual instruction pages. Each color group starts on a new page."""
         width, height = A4
         page_list = []
         all_instructions = self._build_instructions(
-            line_dict, group_orders, color_names, formatter
+            line_dict, group_orders, color_names, color_info_list, formatter
         )
         
         page_counter = 0
-        while all_instructions:
-            page_instructions = all_instructions[:num_rows * num_cols]
-            all_instructions = all_instructions[num_rows * num_cols:]
+        current_page_instructions = []
+        
+        # Split by color groups - start new page at each color header
+        for instruction in all_instructions:
+            if instruction.get("type") == "color_header" and current_page_instructions:
+                # Save current page and start new one
+                page_path = f"{output_path}_page_{page_counter:03d}.pdf"
+                self._draw_page(
+                    page_path, current_page_instructions, num_cols, num_rows,
+                    width, height
+                )
+                page_list.append(page_path)
+                page_counter += 1
+                current_page_instructions = []
             
+            current_page_instructions.append(instruction)
+        
+        # Save last page
+        if current_page_instructions:
             page_path = f"{output_path}_page_{page_counter:03d}.pdf"
             self._draw_page(
-                page_path, page_instructions, num_cols, num_rows,
+                page_path, current_page_instructions, num_cols, num_rows,
                 width, height
             )
             page_list.append(page_path)
-            page_counter += 1
         
         return page_list
     
@@ -221,6 +272,7 @@ class ThreadArtPDFGenerator:
         line_dict: Dict[str, List[Tuple[int, int]]],
         group_orders: str,
         color_names: List[str],
+        color_info_list: List[Dict],
         formatter: PictureHangerFormatter
     ) -> List[Dict]:
         """Build complete instruction list with color groupings."""
@@ -313,10 +365,19 @@ class ThreadArtPDFGenerator:
                     "text": f"By End {lines_at_end}/{total_lines}"
                 })
                 
-                # "Now = color X/Y"
+                # "Now = color X/Y" with hex + position info
+                # Get color info if available
+                color_hex = "#000000"
+                color_pos = idx
+                if color_info_list and idx < len(color_info_list):
+                    color_info = color_info_list[idx]
+                    color_hex = color_info.get('hex', '#000000')
+                
                 instructions.append({
                     "type": "color_header",
-                    "text": f"{color_name} {group_idx + 1}/{len(group_positions)}"
+                    "text": f"{color_name} {group_idx + 1}/{len(group_positions)} ({color_hex})",
+                    "color_name": color_name,
+                    "color_hex": color_hex
                 })
                 
                 # Add line instructions
@@ -436,8 +497,8 @@ class ThreadArtPDFGenerator:
                     continue
                 
                 elif instr_type == "info":
-                    # "By Now" or "By End" lines
-                    c.setFont(self.font_name, 8)
+                    # "By Now" or "By End" lines - now size 32
+                    c.setFont(self.font_name, 32)
                     c.setFillColor(black)
                     text = instruction.get("text", "")
                     c.drawString(base_x, y, text)
@@ -445,15 +506,27 @@ class ThreadArtPDFGenerator:
                     in_header = True
                 
                 elif instr_type == "color_header":
-                    # "Now = white 1/3" format
-                    c.setFont(self.font_name, 9)
-                    c.setFillColor(black)
+                    # "Now = white 1/3" format - size 32, with color
+                    c.setFont(self.font_name, 32)
+                    
+                    # Get color from instruction
+                    color_hex = instruction.get("color_hex", "#000000")
+                    
+                    try:
+                        # Parse hex color if available
+                        color_obj = HexColor(color_hex)
+                        c.setFillColor(color_obj)
+                    except:
+                        # Default to black if color parsing fails
+                        c.setFillColor(black)
+                    
                     text = instruction.get("text", "")
                     c.drawString(base_x, y, f"NOW = {text}")
+                    c.setFillColor(black)
                     current_row += 1
                     
                     # Draw separator after header
-                    y_sep = y - 0.3 * cm
+                    y_sep = y - 0.5 * cm
                     c.setStrokeColor(gray)
                     c.setLineWidth(0.5)
                     c.line(base_x - 0.1 * cm, y_sep, base_x + main_col_width - 0.4 * cm, y_sep)
@@ -587,6 +660,7 @@ def export_to_pdf(
     group_orders: str,
     output_path: str,
     n_nodes: int,
+    color_info_list: List[Dict] = None,
     **kwargs
 ) -> Optional[str]:
     """
@@ -627,6 +701,7 @@ def export_to_pdf(
         return generator.generate_pdf(
             line_sequence=line_sequence,
             color_names=color_names,
+            color_info_list=color_info_list,
             group_orders=group_orders,
             output_path=output_path,
             n_nodes=n_nodes,
