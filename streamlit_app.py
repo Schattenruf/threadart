@@ -1147,23 +1147,22 @@ if st.session_state.get("all_found_colors"):
                 for idx, info in selected_items:
                     adjusted_percents[idx] = info['percent']
                 
-                # Für jede nicht-gewählte Farbe: Finde nächste gewählte und addiere
+                # Für jede nicht-gewählte Farbe: Finde gewählte mit kleinstem Abstand
                 for idx, info, sel in items_sorted:
                     if sel:
                         continue  # Überspringe gewählte
                     
-                    # Finde nächste gewählte Farbe (größer oder gleich)
+                    # Finde gewählte Farbe mit kleinstem Abstand (in derselben Kategorie)
                     target_idx = None
+                    min_distance = float('inf')
+                    
                     for sel_idx, sel_info in selected_items:
-                        if sel_info['percent'] >= info['percent']:
+                        distance = abs(sel_info['percent'] - info['percent'])
+                        if distance < min_distance:
+                            min_distance = distance
                             target_idx = sel_idx
-                            break
                     
-                    # Wenn keine größere gefunden, nimm die kleinste gewählte
-                    if target_idx is None and selected_items:
-                        target_idx = selected_items[-1][0]  # Letzte (kleinste) gewählte
-                    
-                    # Addiere nicht-gewählten Prozent auf Ziel
+                    # Addiere nicht-gewählten Prozent auf nächste gewählte
                     if target_idx is not None:
                         adjusted_percents[target_idx] += info['percent']
             
