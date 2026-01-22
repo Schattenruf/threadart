@@ -306,63 +306,74 @@ class ThreadArtPDFGenerator:
         print(f"\n[DEBUG _build_instructions_from_sequence]")
         print(f"  Total lines: {total_lines}")
         
-        # Track current color group
-        current_color_idx = None
+        def resolve_color_name(hex_value: str) -> str:
+            """Find best name for given hex (prefers detected colors, else map, else hex)."""
+            hx = (hex_value or "#000000").lower()
+            # Prefer exact hex match in color_info_list
+            if color_info_list:
+                for idx, info in enumerate(color_info_list):
+                    info_hex = str(info.get('hex', '')).lower()
+                    if info_hex and info_hex == hx:
+                        if idx < len(color_names):
+                            return color_names[idx]
+                        return info.get('name') or info.get('color_name') or hx
+            # Fallback: just return the hex value as name
+            return hx
+
+        # Track current color group by hex (so headers + page breaks follow real draw order)
+        current_hex = None
         current_group_lines = []
         lines_so_far = 0
-        color_group_count = {}  # Track how many times each color appeared
+        color_group_count = {}  # Track how many times each color hex appeared
         
         for i, entry in enumerate(line_sequence):
-            color_idx = entry.get("color_index", 1) - 1  # Convert to 0-based
+            entry_hex = str(entry.get("color_hex", "#000000")).lower()
             
-            # Check if color changed
-            if current_color_idx is not None and color_idx != current_color_idx:
-                # Finish previous group
+            # Detect color change by hex
+            if current_hex is not None and entry_hex != current_hex:
                 if current_group_lines:
+                    color_name = resolve_color_name(current_hex)
+                    group_number = color_group_count.get(current_hex, 0) + 1
                     instructions.extend(self._create_color_group_instructions(
-                        current_color_idx,
+                        color_name,
+                        current_hex,
                         current_group_lines,
-                        color_names,
-                        color_info_list,
                         formatter,
                         lines_so_far - len(current_group_lines),
                         lines_so_far,
                         total_lines,
-                        color_group_count.get(current_color_idx, 1)
+                        group_number
                     ))
-                
-                # Start new group
+                    color_group_count[current_hex] = group_number
                 current_group_lines = []
-                if current_color_idx is not None:
-                    color_group_count[current_color_idx] = color_group_count.get(current_color_idx, 0) + 1
             
-            # Add line to current group
-            current_color_idx = color_idx
+            current_hex = entry_hex
             current_group_lines.append(entry)
             lines_so_far += 1
         
-        # Don't forget last group
+        # Last group
         if current_group_lines:
+            color_name = resolve_color_name(current_hex)
+            group_number = color_group_count.get(current_hex, 0) + 1
             instructions.extend(self._create_color_group_instructions(
-                current_color_idx,
+                color_name,
+                current_hex,
                 current_group_lines,
-                color_names,
-                color_info_list,
                 formatter,
                 lines_so_far - len(current_group_lines),
                 lines_so_far,
                 total_lines,
-                color_group_count.get(current_color_idx, 0) + 1
+                group_number
             ))
+            color_group_count[current_hex] = group_number
         
         return instructions
     
     def _create_color_group_instructions(
         self,
-        color_idx: int,
+        color_name: str,
+        color_hex: str,
         group_lines: List[Dict],
-        color_names: List[str],
-        color_info_list: List[Dict],
         formatter: PictureHangerFormatter,
         lines_at_start: int,
         lines_at_end: int,
@@ -372,36 +383,8 @@ class ThreadArtPDFGenerator:
         """Create instructions for one color group."""
         instructions = []
         
-        # Gracefully handle missing names or hex info
-        if 0 <= color_idx < len(color_names):
-            color_name = color_names[color_idx]
-        else:
-            color_name = f"Color {color_idx + 1}"
-        
-        # Prefer explicit color_info_list entry, then the sequence hex, then name lookup
-        color_hex = "#000000"
-        if color_info_list and color_idx < len(color_info_list):
-            color_info = color_info_list[color_idx]
-            color_hex = color_info.get('hex', '#000000')
-        else:
-            # Try to read the hex from the first line in this group; fallback to name map
-            first_entry = group_lines[0] if group_lines else {}
-            color_hex = first_entry.get("color_hex", self._get_color_hex(color_name))
-        
-        # If hex matches a different entry in color_info_list, prefer that name
-        if color_info_list:
-            try:
-                hex_lower = color_hex.lower()
-                for idx, info in enumerate(color_info_list):
-                    info_hex = info.get('hex', '').lower()
-                    if info_hex and info_hex == hex_lower:
-                        if idx < len(color_names):
-                            color_name = color_names[idx]
-                        else:
-                            color_name = info.get('name') or info.get('color_name') or color_name
-                        break
-            except Exception:
-                pass
+        color_name = color_name or "Unbekannte Farbe"
+        color_hex = color_hex or "#000000"
         
         print(f"  Creating group for {color_name} #{group_number}: {len(group_lines)} lines, hex={color_hex}")
         
