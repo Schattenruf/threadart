@@ -667,10 +667,10 @@ class ThreadArtPDFGenerator:
                     c.drawString(end_x, y, str(to_hanger))
                     
                     # Draw Position (blue, size 28)
-                    # Show only from_pos (0 or 1)
-                    pos_digit = '0' if from_pos == 'L' else '1'
+                    # Show L or R
+                    pos_text = from_pos  # Already 'L' or 'R' from formatter
                     c.setFillColor(blue)
-                    c.drawString(pos_x, y, pos_digit)
+                    c.drawString(pos_x, y, pos_text)
                     c.setFillColor(black)
                     
                     current_row += 1
