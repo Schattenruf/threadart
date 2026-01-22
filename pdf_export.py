@@ -165,10 +165,22 @@ class ThreadArtPDFGenerator:
         line_dict = {color: [] for color in color_names}
         
         for entry in line_sequence:
-            color_idx = entry["color_index"] - 1  # Convert to 0-based
-            if 0 <= color_idx < len(color_names):
-                color_name = color_names[color_idx]
-                line_dict[color_name].append((entry["from_pin"], entry["to_pin"]))
+            try:
+                color_idx = entry.get("color_index", 1) - 1  # Convert to 0-based, default to 1
+                from_pin = entry.get("from_pin", 0)
+                to_pin = entry.get("to_pin", 0)
+                
+                # Ensure pins are integers
+                from_pin = int(from_pin)
+                to_pin = int(to_pin)
+                
+                if 0 <= color_idx < len(color_names):
+                    color_name = color_names[color_idx]
+                    line_dict[color_name].append((from_pin, to_pin))
+            except (KeyError, ValueError, TypeError) as e:
+                # Skip malformed entries
+                print(f"Warning: Skipping malformed entry: {entry} ({e})")
+                continue
         
         return line_dict
     
@@ -216,16 +228,26 @@ class ThreadArtPDFGenerator:
         total_lines = sum(len(lines) for lines in line_dict.values())
         lines_so_far = 0
         
-        # Parse group orders
+        # Parse group orders with safety checks
         color_map = {i: color_names[i] for i in range(len(color_names))}
         color_groups = {}
+        
+        # Ensure group_orders is a string
+        if not isinstance(group_orders, str):
+            group_orders = str(group_orders) if group_orders else ""
         
         for i, char in enumerate(group_orders):
             if char.isdigit():
                 idx = int(char)
-                if idx not in color_groups:
-                    color_groups[idx] = []
-                color_groups[idx].append(i)
+                if idx < len(color_names):  # Safety check
+                    if idx not in color_groups:
+                        color_groups[idx] = []
+                    color_groups[idx].append(i)
+        
+        # If no groups parsed, create default grouping
+        if not color_groups:
+            for idx, color_name in enumerate(color_names):
+                color_groups[idx] = [idx]
         
         # Generate instructions per color group
         for idx, group_positions in sorted(color_groups.items()):
@@ -234,6 +256,10 @@ class ThreadArtPDFGenerator:
             
             color_name = color_map[idx]
             lines_for_color = line_dict.get(color_name, [])
+            
+            # Ensure it's a list
+            if not isinstance(lines_for_color, list):
+                continue
             
             if not lines_for_color:
                 continue
