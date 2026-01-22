@@ -367,35 +367,39 @@ class ThreadArtPDFGenerator:
         width: float,
         height: float
     ) -> None:
-        """Draw a single instruction page with 3 main columns, each with 3 sub-columns."""
+        """Draw a single instruction page with 3 main columns."""
         c = canvas.Canvas(output_path, pagesize=(width, height))
         
-        # Layout: 3 main columns
+        # Layout: 3 main columns, max 20 rows per column
         margin = 0.5 * cm
         usable_width = width - 2 * margin
         usable_height = height - 2 * margin
         
         main_col_width = usable_width / 3
-        sub_col_width = main_col_width / 3
+        max_rows_per_col = 20
         
         # Draw vertical separators between main columns
         c.setStrokeColor(black)
-        c.setLineWidth(1)
+        c.setLineWidth(2)
         for i in range(1, 3):
             x = margin + i * main_col_width
             c.line(x, margin, x, height - margin)
         
-        # Calculate positions for 9 sub-columns (3 main x 3 sub)
-        sub_col_positions = []
-        for main_idx in range(3):
-            for sub_idx in range(3):
-                x = margin + main_idx * main_col_width + sub_idx * sub_col_width + 0.1 * cm
-                sub_col_positions.append(x)
+        # Process instructions and group into columns
+        current_main_col = 0
+        y_start = height - margin - 1 * cm
+        row_height = (usable_height - 2 * cm) / max_rows_per_col
+        current_row = 0
         
-        # Start from top
-        y_current = height - margin - 0.5 * cm
-        line_height = 0.4 * cm
-        col_idx = 0
+        # Sub-column widths within each main column
+        # [Start] [End] [Pos] layout
+        start_col_width = main_col_width * 0.35
+        end_col_width = main_col_width * 0.35
+        pos_col_width = main_col_width * 0.3
+        
+        # Track if we're in a header section
+        in_header = False
+        header_lines = []
         
         for instruction in instructions:
             try:
@@ -404,60 +408,94 @@ class ThreadArtPDFGenerator:
                 
                 instr_type = instruction.get("type", "unknown")
                 
-                # Get current column position
-                x = sub_col_positions[col_idx]
+                # Calculate base x position for current main column
+                base_x = margin + current_main_col * main_col_width + 0.2 * cm
+                y = y_start - current_row * row_height
                 
-                # Check if we need a new page
-                if y_current < margin + 1 * cm:
-                    break
+                # Check if we need to move to next column
+                if current_row >= max_rows_per_col:
+                    current_main_col += 1
+                    current_row = 0
+                    in_header = False
+                    
+                    if current_main_col >= 3:
+                        # Page is full
+                        break
+                    
+                    base_x = margin + current_main_col * main_col_width + 0.2 * cm
+                    y = y_start
                 
                 if instr_type == "header":
-                    # Skip separator lines, just mark section start
+                    # Start of new color section - draw separator
+                    in_header = True
+                    header_lines = []
+                    c.setStrokeColor(gray)
+                    c.setLineWidth(0.5)
+                    c.line(base_x - 0.1 * cm, y, base_x + main_col_width - 0.4 * cm, y)
+                    current_row += 1
                     continue
                 
                 elif instr_type == "info":
-                    # "By Now X/10000" format
-                    c.setFont(self.font_name, 7)
-                    c.setFillColor(gray)
-                    text = instruction.get("text", "")
-                    c.drawString(x, y_current, text)
-                    c.setFillColor(black)
-                    y_current -= line_height
-                
-                elif instr_type == "color_header":
-                    # "Now = white 1/3" format
+                    # "By Now" or "By End" lines
                     c.setFont(self.font_name, 8)
                     c.setFillColor(black)
                     text = instruction.get("text", "")
-                    c.drawString(x, y_current, f"Now = {text}")
+                    c.drawString(base_x, y, text)
+                    current_row += 1
+                    in_header = True
+                
+                elif instr_type == "color_header":
+                    # "Now = white 1/3" format
+                    c.setFont(self.font_name, 9)
                     c.setFillColor(black)
-                    y_current -= line_height * 1.2
+                    text = instruction.get("text", "")
+                    c.drawString(base_x, y, f"NOW = {text}")
+                    current_row += 1
+                    
+                    # Draw separator after header
+                    y_sep = y - 0.3 * cm
+                    c.setStrokeColor(gray)
+                    c.setLineWidth(0.5)
+                    c.line(base_x - 0.1 * cm, y_sep, base_x + main_col_width - 0.4 * cm, y_sep)
+                    current_row += 1
+                    in_header = False
                 
                 elif instr_type == "instruction":
-                    # Compact format: "Start End L/R" on one line
-                    c.setFont(self.font_name, 7)
-                    from_hanger = instruction.get('from_hanger', 'N/A')
-                    to_hanger = instruction.get('to_hanger', 'N/A')
+                    # Main instruction line: [Start] [End] [Pos]
+                    from_hanger = instruction.get('from_hanger', '0')
+                    to_hanger = instruction.get('to_hanger', '0')
                     from_pos = instruction.get('from_pos', 'L')
                     to_pos = instruction.get('to_pos', 'R')
                     
-                    # Format: "123 45 L" (start-hanger end-hanger position)
-                    text = f"{from_hanger:>3s} {to_hanger:>3s} {from_pos}/{to_pos}"
-                    c.drawString(x, y_current, text)
-                    y_current -= line_height
+                    # Calculate x positions for 3 sub-columns
+                    start_x = base_x
+                    end_x = base_x + start_col_width
+                    pos_x = base_x + start_col_width + end_col_width
+                    
+                    # Draw Start hanger (black, size 32)
+                    c.setFont(self.font_name, 32)
+                    c.setFillColor(black)
+                    c.drawString(start_x, y, str(from_hanger))
+                    
+                    # Draw End hanger (black, size 32)
+                    c.drawString(end_x, y, str(to_hanger))
+                    
+                    # Draw Position (blue, size 32)
+                    # Show only from_pos (0 or 1)
+                    pos_digit = '0' if from_pos == 'L' else '1'
+                    c.setFillColor(blue)
+                    c.drawString(pos_x, y, pos_digit)
+                    c.setFillColor(black)
+                    
+                    current_row += 1
                 
                 elif instr_type == "footer":
-                    # End of color group - move to next sub-column
-                    col_idx = (col_idx + 1) % 9
-                    if col_idx == 0:
-                        # Reset to top of page for next page
-                        y_current = height - margin - 0.5 * cm
-                    else:
-                        # Reset y for next sub-column
-                        y_current = height - margin - 0.5 * cm
+                    # End of color group - no visual marker needed
+                    pass
                 
                 elif instr_type == "spacer":
-                    y_current -= line_height * 0.5
+                    # Small gap
+                    current_row += 0.5
                 
             except Exception as e:
                 print(f"Error drawing instruction {instruction}: {e}")
