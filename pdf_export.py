@@ -372,16 +372,36 @@ class ThreadArtPDFGenerator:
         """Create instructions for one color group."""
         instructions = []
         
-        if color_idx >= len(color_names):
-            return instructions
+        # Gracefully handle missing names or hex info
+        if 0 <= color_idx < len(color_names):
+            color_name = color_names[color_idx]
+        else:
+            color_name = f"Color {color_idx + 1}"
         
-        color_name = color_names[color_idx]
-        
-        # Get color hex
+        # Prefer explicit color_info_list entry, then the sequence hex, then name lookup
         color_hex = "#000000"
         if color_info_list and color_idx < len(color_info_list):
             color_info = color_info_list[color_idx]
             color_hex = color_info.get('hex', '#000000')
+        else:
+            # Try to read the hex from the first line in this group; fallback to name map
+            first_entry = group_lines[0] if group_lines else {}
+            color_hex = first_entry.get("color_hex", self._get_color_hex(color_name))
+        
+        # If hex matches a different entry in color_info_list, prefer that name
+        if color_info_list:
+            try:
+                hex_lower = color_hex.lower()
+                for idx, info in enumerate(color_info_list):
+                    info_hex = info.get('hex', '').lower()
+                    if info_hex and info_hex == hex_lower:
+                        if idx < len(color_names):
+                            color_name = color_names[idx]
+                        else:
+                            color_name = info.get('name') or info.get('color_name') or color_name
+                        break
+            except Exception:
+                pass
         
         print(f"  Creating group for {color_name} #{group_number}: {len(group_lines)} lines, hex={color_hex}")
         
@@ -667,16 +687,16 @@ class ThreadArtPDFGenerator:
                     continue
                 
                 elif instr_type == "info":
-                    # "By Now" or "By End" lines - smaller font size 14
-                    c.setFont(self.font_name, 14)
+                    # "By Now" or "By End" lines - compact font size 13
+                    c.setFont(self.font_name, 13)
                     c.setFillColor(black)
                     text = instruction.get("text", "")
                     c.drawString(base_x, y, text)
                     current_row += 0.5  # Half row for header
                 
                 elif instr_type == "color_header":
-                    # "Now = white 1/3 (#hex)" format - size 16, with color
-                    c.setFont(self.font_name, 16)
+                    # "Now = white 1/3 (#hex)" format - size 15, with color
+                    c.setFont(self.font_name, 15)
                     
                     # Get color from instruction
                     color_hex = instruction.get("color_hex", "#000000")
@@ -713,15 +733,15 @@ class ThreadArtPDFGenerator:
                     end_x = base_x + start_col_width
                     pos_x = base_x + start_col_width + end_col_width
                     
-                    # Draw Start hanger (black, size 32)
-                    c.setFont(self.font_name, 32)
+                    # Draw Start hanger (black, size 28)
+                    c.setFont(self.font_name, 28)
                     c.setFillColor(black)
                     c.drawString(start_x, y, str(from_hanger))
                     
-                    # Draw End hanger (black, size 32)
+                    # Draw End hanger (black, size 28)
                     c.drawString(end_x, y, str(to_hanger))
                     
-                    # Draw Position (blue, size 32)
+                    # Draw Position (blue, size 28)
                     # Show only from_pos (0 or 1)
                     pos_digit = '0' if from_pos == 'L' else '1'
                     c.setFillColor(blue)
