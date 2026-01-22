@@ -1099,11 +1099,21 @@ if st.session_state.generated_html:
                 try:
                     from pdf_export import export_to_pdf
                     
-                    # Get color information
+                    # Get color information with debug
                     detected_colors = st.session_state.get("all_found_colors", [])
                     color_names = [c["color_name"] for c in detected_colors]
                     group_orders = st.session_state.get("group_orders", "")
                     n_nodes = st.session_state.get("n_nodes_real", 320)
+                    
+                    # Debug info display
+                    with st.expander("🔍 Debug Info", expanded=False):
+                        st.write(f"**line_sequence**: {len(seq)} entries")
+                        if seq and len(seq) > 0:
+                            st.write(f"**First entry type**: {type(seq[0])}")
+                            st.write(f"**First entry**: {seq[0]}")
+                        st.write(f"**color_names**: {color_names}")
+                        st.write(f"**group_orders**: `{repr(group_orders)}`")
+                        st.write(f"**n_nodes**: {n_nodes}")
                     
                     # Generate PDF
                     output_path = f"outputs_drawing/{name or 'thread_art'}_instructions"
@@ -1133,10 +1143,12 @@ if st.session_state.generated_html:
                     else:
                         st.error("❌ PDF generation failed")
                 
-                except ImportError:
-                    st.error("❌ reportlab and PyPDF2 required: `pip install reportlab PyPDF2`")
+                except ImportError as e:
+                    st.error(f"❌ reportlab and PyPDF2 required: `pip install reportlab PyPDF2`")
+                    st.exception(e)
                 except Exception as e:
                     st.error(f"❌ Error generating PDF: {str(e)}")
+                    st.exception(e)  # Shows full traceback
 # === Gefundene Farben - Ausklappbarer Bereich (nur bei Custom Upload) ===
 if st.session_state.get("all_found_colors"):
     # Initialisiere expanded state falls nicht vorhanden
