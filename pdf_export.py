@@ -155,7 +155,7 @@ class ThreadArtPDFGenerator:
             line_sequence: List of line dicts with step, color_index, from_pin, to_pin, etc.
             color_names: List of color names
             color_info_list: List of color info dicts (optional, from streamlit)
-            group_orders: String indicating the order of colors (e.g., "0011223")
+            group_orders: String indicating the order of colors (e.g., "2,3,4,1,3,2,1")
             output_path: Base output path (without extension)
             n_nodes: Total number of nodes/attachment points
             num_cols: Number of columns per page
@@ -168,11 +168,15 @@ class ThreadArtPDFGenerator:
         """
         formatter = PictureHangerFormatter(n_nodes)
         
-        # Generate individual pages using line_sequence directly
-        page_list = self._generate_instruction_pages(
-            line_sequence=line_sequence,
+        # Build line_dict (lines grouped by color name)
+        line_dict = self._group_lines_by_color(line_sequence, color_names)
+        
+        # Generate individual pages following group_orders EXACTLY
+        page_list = self._generate_instruction_pages_by_group_orders(
+            line_dict=line_dict,
             color_names=color_names,
             color_info_list=color_info_list,
+            group_orders=group_orders,
             formatter=formatter,
             output_path=output_path,
             num_cols=num_cols,
@@ -184,8 +188,6 @@ class ThreadArtPDFGenerator:
         
         # Generate statistics if requested
         if include_stats:
-            # Build line_dict for statistics
-            line_dict = self._group_lines_by_color(line_sequence, color_names)
             self._generate_statistics(line_dict, formatter, output_path)
         
         return final_pdf
@@ -218,226 +220,166 @@ class ThreadArtPDFGenerator:
         
         return line_dict
     
-    def _generate_instruction_pages(
+    
+    def _generate_instruction_pages_by_group_orders(
         self,
-        line_sequence: List[Dict],
+        line_dict: Dict[str, List[Tuple[int, int]]],
         color_names: List[str],
         color_info_list: List[Dict],
+        group_orders: str,
         formatter: PictureHangerFormatter,
         output_path: str,
         num_cols: int,
         num_rows: int
     ) -> List[str]:
-        """Generate individual instruction pages. New page only at actual color changes."""
+        """Generate instruction pages following group_orders EXACTLY (like the template)."""
         width, height = A4
         page_list = []
-        all_instructions = self._build_instructions_from_sequence(
-            line_sequence, color_names, color_info_list, formatter
-        )
         
-        page_counter = 0
-        current_page_instructions = []
-        last_color_hex = None
+        total_lines = sum(len(lines) for lines in line_dict.values())
         
-        # Split by actual color changes (not color groups)
-        for instruction in all_instructions:
-            if instruction.get("type") == "color_header":
-                current_color_hex = instruction.get("color_hex", "#000000")
-                
-                # Only start new page if COLOR actually changed
-                if last_color_hex is not None and current_color_hex != last_color_hex and current_page_instructions:
-                    # Save current page and start new one
-                    page_path = f"{output_path}_page_{page_counter:03d}.pdf"
-                    self._draw_page(
-                        page_path, current_page_instructions, num_cols, num_rows,
-                        width, height
-                    )
-                    page_list.append(page_path)
-                    page_counter += 1
-                    current_page_instructions = []
-                
-                last_color_hex = current_color_hex
-            
-            current_page_instructions.append(instruction)
-        
-        # Save last page
-        if current_page_instructions:
-            page_path = f"{output_path}_page_{page_counter:03d}.pdf"
-            self._draw_page(
-                page_path, current_page_instructions, num_cols, num_rows,
-                width, height
-            )
-            page_list.append(page_path)
-        
-        return page_list
-    
-    def _build_instructions(
-        self,
-        line_dict: Dict[str, List[Tuple[int, int]]],
-        group_orders: str,
-        color_names: List[str],
-        color_info_list: List[Dict],
-        formatter: PictureHangerFormatter
-    ) -> List[Dict]:
-        """Build complete instruction list following line_sequence order exactly."""
-        instructions = []
-        
-        # We don't need line_dict anymore - we'll use the line_sequence directly
-        # This method signature is kept for compatibility but we'll get line_sequence from generate_pdf
-        print(f"\n[DEBUG _build_instructions]")
-        print(f"  This method will be bypassed - using direct line_sequence approach")
-        
-        return instructions
-    
-    def _build_instructions_from_sequence(
-        self,
-        line_sequence: List[Dict],
-        color_names: List[str],
-        color_info_list: List[Dict],
-        formatter: PictureHangerFormatter
-    ) -> List[Dict]:
-        """Build instructions directly from line_sequence - preserves exact order from generation."""
-        instructions = []
-        
-        if not line_sequence:
-            return instructions
-        
-        total_lines = len(line_sequence)
-        print(f"\n[DEBUG _build_instructions_from_sequence]")
+        print(f"\n[DEBUG _generate_instruction_pages_by_group_orders]")
         print(f"  Total lines: {total_lines}")
+        print(f"  group_orders: {repr(group_orders)}")
+        print(f"  color_names: {color_names}")
         
-        def resolve_color_name(hex_value: str) -> str:
-            """Find best name for given hex (prefers detected colors, else map, else hex)."""
-            hx = (hex_value or "#000000").lower()
-            # Prefer exact hex match in color_info_list
-            if color_info_list:
-                for idx, info in enumerate(color_info_list):
-                    info_hex = str(info.get('hex', '')).lower()
-                    if info_hex and info_hex == hx:
-                        if idx < len(color_names):
-                            return color_names[idx]
-                        return info.get('name') or info.get('color_name') or hx
-            # Fallback: just return the hex value as name
-            return hx
-
-        # Track current color group by hex (so headers + page breaks follow real draw order)
-        current_hex = None
-        current_group_lines = []
-        lines_so_far = 0
-        color_group_count = {}  # Track how many times each color hex appeared
+        # Parse group_orders: "2,3,4,1,3,2,1" → ["2", "3", "4", "1", "3", "2", "1"]
+        if ',' in group_orders:
+            go_list = group_orders.split(',')
+        else:
+            # Single digit repeated: "5" → "1,2,3,4,5,1,2,3,4,5,..." (5 loops)
+            go_list = list(group_orders) * int(group_orders) if group_orders.isdigit() else list(group_orders)
         
-        for i, entry in enumerate(line_sequence):
-            entry_hex = str(entry.get("color_hex", "#000000")).lower()
-            
-            # Detect color change by hex
-            if current_hex is not None and entry_hex != current_hex:
-                if current_group_lines:
-                    color_name = resolve_color_name(current_hex)
-                    group_number = color_group_count.get(current_hex, 0) + 1
-                    instructions.extend(self._create_color_group_instructions(
-                        color_name,
-                        current_hex,
-                        current_group_lines,
-                        formatter,
-                        lines_so_far - len(current_group_lines),
-                        lines_so_far,
-                        total_lines,
-                        group_number
-                    ))
-                    color_group_count[current_hex] = group_number
-                current_group_lines = []
-            
-            current_hex = entry_hex
-            current_group_lines.append(entry)
-            lines_so_far += 1
+        print(f"  go_list: {go_list}")
         
-        # Last group
-        if current_group_lines:
-            color_name = resolve_color_name(current_hex)
-            group_number = color_group_count.get(current_hex, 0) + 1
-            instructions.extend(self._create_color_group_instructions(
-                color_name,
-                current_hex,
-                current_group_lines,
-                formatter,
-                lines_so_far - len(current_group_lines),
-                lines_so_far,
-                total_lines,
-                group_number
-            ))
-            color_group_count[current_hex] = group_number
+        # Build group_len_list: consecutive blocks of same color
+        # e.g., "2,3,4,1,3,2,1" → [["2", 1], ["3", 1], ["4", 1], ["1", 1], ["3", 1], ["2", 1], ["1", 1]]
+        group_len_list = []
+        for go_char in go_list:
+            if group_len_list and group_len_list[-1][0] == go_char:
+                group_len_list[-1][1] += 1
+            else:
+                group_len_list.append([go_char, 1])
         
-        return instructions
-    
-    def _create_color_group_instructions(
-        self,
-        color_name: str,
-        color_hex: str,
-        group_lines: List[Dict],
-        formatter: PictureHangerFormatter,
-        lines_at_start: int,
-        lines_at_end: int,
-        total_lines: int,
-        group_number: int
-    ) -> List[Dict]:
-        """Create instructions for one color group."""
-        instructions = []
+        print(f"  group_len_list: {group_len_list}")
         
-        color_name = color_name or "Unbekannte Farbe"
-        color_hex = color_hex or "#000000"
+        # Build instructions following group_len_list
+        all_instructions = []
+        total_lines_so_far = 0
+        color_occurrence_count = {color: 0 for color in set(go_list)}
         
-        print(f"  Creating group for {color_name} #{group_number}: {len(group_lines)} lines, hex={color_hex}")
-        
-        # "By Now X/total"
-        instructions.append({
-            "type": "info",
-            "text": f"By Now {lines_at_start}/{total_lines}"
-        })
-        
-        # "By End Y/total"
-        instructions.append({
-            "type": "info",
-            "text": f"By End {lines_at_end}/{total_lines}"
-        })
-        
-        # "Now = color" with hex
-        instructions.append({
-            "type": "color_header",
-            "text": f"{color_name} ({color_hex})",
-            "color_name": color_name,
-            "color_hex": color_hex
-        })
-        
-        # Add line instructions
-        for entry in group_lines:
+        for group_idx, (color_idx_str, group_len) in enumerate(group_len_list):
+            # Convert color index to 0-based
             try:
-                from_pin = entry.get("from_pin", 0)
-                to_pin = entry.get("to_pin", 0)
-                
-                # Get hanger info for both pins
+                color_idx = int(color_idx_str) - 1  # group_orders uses 1-based indices
+            except (ValueError, TypeError):
+                print(f"  ERROR: Invalid color_idx {color_idx_str}")
+                continue
+            
+            if color_idx < 0 or color_idx >= len(color_names):
+                print(f"  ERROR: color_idx {color_idx} out of range for {len(color_names)} colors")
+                continue
+            
+            color_name = color_names[color_idx]
+            lines_for_color = line_dict.get(color_name, [])
+            
+            if not lines_for_color:
+                print(f"  WARNING: No lines for color {color_name} (idx {color_idx})")
+                continue
+            
+            # Count how many times this color appears total in group_len_list
+            total_groups_this_color = sum(1 for c_idx, _ in group_len_list if c_idx == color_idx_str)
+            
+            # Track which occurrence of this color we're on
+            color_occurrence_count[color_idx_str] += 1
+            this_occurrence = color_occurrence_count[color_idx_str]
+            
+            # Calculate line range for this group (divide lines equally among groups of this color)
+            start_line_idx = ((this_occurrence - 1) * len(lines_for_color)) // total_groups_this_color
+            end_line_idx = (this_occurrence * len(lines_for_color)) // total_groups_this_color
+            group_lines = lines_for_color[start_line_idx:end_line_idx]
+            
+            if not group_lines:
+                print(f"  WARNING: Empty group for {color_name}")
+                continue
+            
+            # Get color hex
+            color_hex = "#000000"
+            if color_info_list and color_idx < len(color_info_list):
+                color_info = color_info_list[color_idx]
+                color_hex = color_info.get('hex', '#000000')
+            
+            print(f"  Group {group_idx}: {color_name} ({total_groups_this_color} total, this is #{this_occurrence}), {len(group_lines)} lines, hex={color_hex}")
+            
+            # Create instructions for this group
+            lines_at_start = total_lines_so_far
+            lines_at_end = total_lines_so_far + len(group_lines)
+            
+            all_instructions.append({
+                "type": "info",
+                "text": f"By Now {lines_at_start}/{total_lines}"
+            })
+            all_instructions.append({
+                "type": "info",
+                "text": f"By End {lines_at_end}/{total_lines}"
+            })
+            all_instructions.append({
+                "type": "color_header",
+                "text": f"{color_name} {this_occurrence}/{total_groups_this_color} ({color_hex})",
+                "color_name": color_name,
+                "color_hex": color_hex
+            })
+            
+            # Add line instructions
+            for from_pin, to_pin in group_lines:
                 from_hanger_num, from_pos, _ = formatter.format_node(int(from_pin))
                 to_hanger_num, to_pos, _ = formatter.format_node(int(to_pin))
                 
-                instructions.append({
+                all_instructions.append({
                     "type": "instruction",
                     "from_hanger": from_hanger_num,
                     "to_hanger": to_hanger_num,
                     "from_pos": from_pos,
                     "to_pos": to_pos
                 })
-            except Exception as e:
-                print(f"  ERROR processing line entry {entry}: {e}")
-                continue
+            
+            all_instructions.append({
+                "type": "footer",
+                "text": f"Completed: {color_name} {this_occurrence}/{total_groups_this_color}"
+            })
+            all_instructions.append({"type": "spacer", "height": 12})
+            
+            total_lines_so_far = lines_at_end
         
-        instructions.append({
-            "type": "footer",
-            "text": f"Completed: {color_name}"
-        })
-        instructions.append({"type": "spacer", "height": 12})
+        # Now convert all_instructions into pages
+        page_counter = 0
+        current_page_instructions = []
         
-        return instructions
-        """Build complete instruction list with color groupings."""
-        instructions = []
+        for instruction in all_instructions:
+            # Add instruction
+            current_page_instructions.append(instruction)
+            
+            # Check if page is full
+            instruction_count = sum(1 for i in current_page_instructions if i.get("type") in ("instruction", "info", "color_header"))
+            
+            if instruction_count >= (num_cols * num_rows):
+                # Save page
+                page_path = f"{output_path}_page_{page_counter:03d}.pdf"
+                self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
+                page_list.append(page_path)
+                page_counter += 1
+                current_page_instructions = []
+        
+        # Save last page
+        if current_page_instructions:
+            page_path = f"{output_path}_page_{page_counter:03d}.pdf"
+            self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
+            page_list.append(page_path)
+        
+        return page_list
+
+
+    # Old methods no longer needed - everything is handled by _generate_instruction_pages_by_group_orders
         total_lines = sum(len(lines) for lines in line_dict.values())
         lines_so_far = 0
         
