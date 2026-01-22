@@ -1176,10 +1176,8 @@ if st.session_state.get("all_found_colors"):
                 selected_hists.append(adjusted_percents[color_idx])
             
             if selected_colors:
-                # Normalisiere auf Summe = 1.0
-                total = sum(selected_hists)
-                if total > 0:
-                    selected_hists = [h / total for h in selected_hists]
+                # KEINE globale Normalisierung! Das würde Schwarz/Weiß verfälschen.
+                # Die Prozente bleiben wie sie sind (Summe < 100% ist OK, da wir Farben abgewählt haben)
                 
                 # === Berechne Group Order Vorschlag ===
                 # Berechne Luminanz für jede Farbe (0.299*R + 0.587*G + 0.114*B)
