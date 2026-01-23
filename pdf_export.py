@@ -360,10 +360,24 @@ class ThreadArtPDFGenerator:
         # Now convert all_instructions into pages
         page_counter = 0
         current_page_instructions = []
+        current_color_hex = None  # Track current color for page breaks
         
         for instruction in all_instructions:
+            # Check for color change (new header) - force page break
+            if instruction.get("type") == "header" and current_page_instructions:
+                # Save current page before starting new color
+                page_path = f"{output_path}_page_{page_counter:03d}.pdf"
+                self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
+                page_list.append(page_path)
+                page_counter += 1
+                current_page_instructions = []
+            
             # Add instruction
             current_page_instructions.append(instruction)
+            
+            # Track color for debugging
+            if instruction.get("type") == "color_header":
+                current_color_hex = instruction.get("color_hex")
             
             # Check if page is full
             instruction_count = sum(1 for i in current_page_instructions if i.get("type") in ("instruction", "info", "color_header"))
@@ -552,13 +566,13 @@ class ThreadArtPDFGenerator:
         """Draw a single instruction page with 3 main columns."""
         c = canvas.Canvas(output_path, pagesize=(width, height))
         
-        # Layout: 3 main columns, max 20 rows per column
+        # Layout: 3 main columns, max num_rows rows per column
         margin = 0.5 * cm
         usable_width = width - 2 * margin
         usable_height = height - 2 * margin
         
         main_col_width = usable_width / 3
-        max_rows_per_col = 20
+        max_rows_per_col = num_rows  # Use parameter instead of hardcoded 20
         
         # Draw vertical separators between main columns
         c.setStrokeColor(black)
