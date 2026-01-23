@@ -562,9 +562,10 @@ with st.sidebar:
         )
         
         # === Neue HSV-basierte Farberkennung mit Checkbox-Selection ===
-        # Only recompute if image changed (using id() for efficient comparison)
-        current_image_id = id(image)
-        image_changed = st.session_state.get("last_image_id") != current_image_id
+        # Only recompute if image changed (hash the bytes to detect changes)
+        import hashlib
+        image_hash = hashlib.md5(image_bytes).hexdigest()
+        image_changed = st.session_state.get("last_image_hash") != image_hash
         
         if image_changed:
             try:
@@ -589,7 +590,7 @@ with st.sidebar:
                 
                 # Store in session state
                 st.session_state.all_found_colors = all_found_colors
-                st.session_state.last_image_id = current_image_id
+                st.session_state.last_image_hash = image_hash
                 
                 # Initialize checkbox states (alle Farben sind initial ausgewählt)
                 st.session_state.color_checkbox_states = [True] * len(all_found_colors)
