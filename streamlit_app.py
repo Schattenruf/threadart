@@ -1438,11 +1438,11 @@ def apply_suggestion_callback():
     if "n_lines_per_color" in data:
         suggested_lines = data["n_lines_per_color"]
     else:
-        # Fallback: Berechne selbst wenn nicht vorhanden
-        histogram = data["color_histogram"]
+        # Fallback: Verwende einfache Prozentverteilung
+        histogram = data.get("color_histogram", [])
         n_lines_total = st.session_state.get("decompose_total_lines_input", 10000)
         
-        # Validate and normalize histogram to list of numbers
+        # Normalize histogram
         try:
             if histogram and isinstance(histogram[0], dict):
                 histogram = [item.get('percent', 0) for item in histogram]
@@ -1452,74 +1452,16 @@ def apply_suggestion_callback():
         except Exception:
             histogram = [1.0 / len(palette)] * len(palette)
         
-        MIN_LINES = 100
-        raw_lines = [int(round(h * n_lines_total)) for h in histogram]
-
-    # Top-Farbe (höchster Prozentanteil) bestimmen
-    top_idx = max(range(len(histogram)), key=lambda i: histogram[i]) if histogram else 0
-
-    # Start mit Rohwerten
-    suggested_lines = raw_lines[:]
-
-    # Kleine Farben auf MIN_LINES anheben, Defizit aufsummieren
-    deficit_total = 0
-    for i in range(len(suggested_lines)):
-        if suggested_lines[i] < MIN_LINES:
-            deficit_total += (MIN_LINES - suggested_lines[i])
-            suggested_lines[i] = MIN_LINES
-
-    # Summe prüfen und Delta berechnen
-    current_sum = sum(suggested_lines)
-    delta = n_lines_total - current_sum
-
-    if delta != 0:
-        # Anpassbare Indizes: alle außer Top-Farbe und nur solche > MIN_LINES
-        adjustable = [i for i in range(len(suggested_lines)) if i != top_idx and suggested_lines[i] > MIN_LINES]
-        if not adjustable:
-            # Fallback: wenn nichts anpassbar, nimm Top-Farbe dazu
-            adjustable = [i for i in range(len(suggested_lines)) if suggested_lines[i] > MIN_LINES]
-
-        if adjustable:
-            # Verteile delta proportional an Histogrammanteile dieser anpassbaren Farben
-            hist_sum_adj = sum(histogram[i] for i in adjustable)
-            if hist_sum_adj == 0:
-                # Fallback: proportionale Verteilung nach aktueller Linienzahl
-                total_adj_lines = sum(suggested_lines[i] for i in adjustable)
-                assigned = 0
-                for i in adjustable[:-1]:
-                    add = int(round(delta * (suggested_lines[i] / total_adj_lines)))
-                    suggested_lines[i] += add
-                    assigned += add
-                suggested_lines[adjustable[-1]] += (delta - assigned)
-            else:
-                assigned = 0
-                for i in adjustable[:-1]:
-                    add = int(round(delta * (histogram[i] / hist_sum_adj)))
-                    suggested_lines[i] += add
-                    assigned += add
-                suggested_lines[adjustable[-1]] += (delta - assigned)
-        else:
-            # End-Fallback: alles auf Top-Farbe
-            suggested_lines[top_idx] += delta
-
-        # Sicherstellen, dass durch Anpassung keine Farbe unter MIN_LINES fällt
-        # Falls doch, korrigiere und verschiebe Rest wieder in verbleibende Gruppe (einfacher Fallback)
-        unders = [i for i in range(len(suggested_lines)) if suggested_lines[i] < MIN_LINES]
-        if unders:
-            need = sum(MIN_LINES - suggested_lines[i] for i in unders)
-            for i in unders:
-                suggested_lines[i] = MIN_LINES
-            # Ziehe Bedarf von nicht-Top, >MIN Linien ab
-            donors = [i for i in range(len(suggested_lines)) if i != top_idx and suggested_lines[i] > MIN_LINES]
-            for i in donors:
-                take = min(need, suggested_lines[i] - MIN_LINES)
-                suggested_lines[i] -= take
-                need -= take
-                if need <= 0:
-                    break
-            if need > 0:
-                # Wenn immer noch Bedarf: letzter Ausweg Top-Farbe
-                suggested_lines[top_idx] = max(MIN_LINES, suggested_lines[top_idx] - need)
+        suggested_lines = [int(h * n_lines_total) for h in histogram]
+        # Adjust remainder to darkest color
+        remainder = n_lines_total - sum(suggested_lines)
+        if remainder != 0:
+            try:
+                luminances = [0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2] for c in palette]
+                darkest_idx = min(range(len(luminances)), key=lambda i: luminances[i])
+            except Exception:
+                darkest_idx = 0
+            suggested_lines[darkest_idx] += remainder
     
     # === Berechne intelligente Group Order ===
     # Strategie: Erstelle Sequenz von hell nach dunkel für bessere Tiefe
