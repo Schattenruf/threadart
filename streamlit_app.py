@@ -1467,7 +1467,6 @@ def apply_suggestion_callback():
     num_colors = len(palette)
     
     # Verwende Luminanz (Helligkeit) um eine intelligente Reihenfolge zu bauen
-    # Strategie: Helle Farben zuerst (als Basis), dann mittlere, dann dunkle (oben)
     luminances = []
     for color in palette:
         lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
@@ -1476,38 +1475,56 @@ def apply_suggestion_callback():
     # Sortiere Farben nach Helligkeit
     color_indices_by_brightness = sorted(range(num_colors), key=lambda i: luminances[i], reverse=True)  # Hell zu Dunkel
     
-    # Baue Sequenz: Mittlere und helle zuerst (mehrmals), dunkle zuerst, dunkle zuletzt
+    # Teile in Hell und Dunkel
+    luminance_threshold = sum(luminances) / len(luminances)  # Durchschnitt als Schwelle
+    bright_colors = [i for i in color_indices_by_brightness if luminances[i] >= luminance_threshold]
+    dark_colors = [i for i in color_indices_by_brightness if luminances[i] < luminance_threshold]
+    
+    # Baue Sequenz: Alterniere Hell-Dunkel um Übersteurung zu vermeiden
     suggested_sequence = []
     
     if num_colors == 1:
         suggested_sequence = [1]
     elif num_colors == 2:
-        # Hell, Dunkel, Hell, Dunkel
+        # Hell, Dunkel, Hell, Dunkel (alternierend)
         bright_idx = color_indices_by_brightness[0] + 1
         dark_idx = color_indices_by_brightness[1] + 1
         suggested_sequence = [bright_idx, dark_idx, bright_idx, dark_idx]
     elif num_colors == 3:
-        # Bright, Mid, Dark, Mid, Bright, Dark
+        # Bright, Dark, Bright, Dark, Mid, Dark (alternierend hell-dunkel)
         bright_idx = color_indices_by_brightness[0] + 1
         mid_idx = color_indices_by_brightness[1] + 1
         dark_idx = color_indices_by_brightness[2] + 1
-        suggested_sequence = [bright_idx, mid_idx, dark_idx, mid_idx, bright_idx, dark_idx]
+        suggested_sequence = [bright_idx, dark_idx, mid_idx, dark_idx, bright_idx, dark_idx]
     elif num_colors == 4:
-        # [1] Bright, [2] Mid-High, [3] Mid-Low, [4] Dark
-        # Sequenz: Mid-High, Mid-Low, Dark, Bright, Mid-Low, Mid-High, Dark
-        indices = [color_indices_by_brightness[i] + 1 for i in range(4)]
-        bright, mid_high, mid_low, dark = indices
-        suggested_sequence = [mid_high, mid_low, dark, bright, mid_low, mid_high, dark]
+        # Strategie: Nach hellen Farben immer dunkle Farben setzen
+        # Das verhindert Übersteurung
+        if len(bright_colors) >= 2 and len(dark_colors) >= 2:
+            # Helle und dunkle Farben vorhanden
+            b1, b2 = bright_colors[0] + 1, bright_colors[1] + 1
+            d1, d2 = dark_colors[0] + 1, dark_colors[1] + 1
+            # Alterniere: Hell1, Dunkel1, Hell2, Dunkel2, Hell1, Dunkel1, Hell2
+            suggested_sequence = [b1, d1, b2, d2, b1, d1, b2]
+        elif len(bright_colors) >= 1 and len(dark_colors) >= 3:
+            # Wenig helle, viele dunkle
+            b = bright_colors[0] + 1
+            d = [dark_colors[i] + 1 for i in range(min(3, len(dark_colors)))]
+            suggested_sequence = [b, d[0], d[1], d[2], b, d[0], b]
+        else:
+            # Fallback
+            indices = [color_indices_by_brightness[i] + 1 for i in range(4)]
+            suggested_sequence = [indices[0], indices[3], indices[1], indices[2], indices[0], indices[3]]
     else:
-        # Mehr als 4 Farben: Verwende ähnliches Muster
-        # Mittlere zuerst, dann dunkle, dann helle
-        mid_start = num_colors // 2
+        # Mehr als 4 Farben: Alterniere zwischen hell und dunkel
         suggested_sequence = []
-        for i in range(mid_start, num_colors):
-            suggested_sequence.append(color_indices_by_brightness[i] + 1)
-        for i in range(0, mid_start):
-            suggested_sequence.append(color_indices_by_brightness[i] + 1)
-        suggested_sequence.append(color_indices_by_brightness[-1] + 1)  # Dunkle am Ende
+        bi, di = 0, 0
+        while len(suggested_sequence) < min(20, num_colors * 3) and (bi < len(bright_colors) or di < len(dark_colors)):
+            if bi < len(bright_colors):
+                suggested_sequence.append(bright_colors[bi] + 1)
+                bi += 1
+            if di < len(dark_colors) and len(suggested_sequence) < min(20, num_colors * 3):
+                suggested_sequence.append(dark_colors[di] + 1)
+                di += 1
     
     suggested_group_order = ",".join(map(str, suggested_sequence))
     
