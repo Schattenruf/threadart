@@ -562,36 +562,44 @@ with st.sidebar:
         )
         
         # === Neue HSV-basierte Farberkennung mit Checkbox-Selection ===
-        try:
-            hsv_colors = extract_colors_hsv(image)
-            
-            # Flatten all colors into one list with category info
-            all_found_colors = []
-            
-            # Add black & white if present
-            if hsv_colors['black']:
-                all_found_colors.append(('Schwarz', hsv_colors['black']))
-            if hsv_colors['white']:
-                all_found_colors.append(('Weiß', hsv_colors['white']))
-            
-            # Add colored categories
-            for color_info in hsv_colors['red']:
-                all_found_colors.append(('Rot', color_info))
-            for color_info in hsv_colors['green']:
-                all_found_colors.append(('Grün', color_info))
-            for color_info in hsv_colors['blue']:
-                all_found_colors.append(('Blau', color_info))
-            
-            # Store in session state
-            st.session_state.all_found_colors = all_found_colors
-            
-            # Initialize checkbox states
-            if "color_checkbox_states" not in st.session_state:
-                st.session_state.color_checkbox_states = [True] * len(all_found_colors)
+        # Only recompute if image changed OR if explicitly requested after "Vorschlag generieren"
+        current_image_id = id(image)
+        image_changed = st.session_state.get("last_image_id") != current_image_id
+        
+        if image_changed or st.session_state.get("recompute_colors", False):
+            try:
+                hsv_colors = extract_colors_hsv(image)
                 
-        except Exception as e:
-            st.session_state.all_found_colors = []
-            st.session_state.color_checkbox_states = []
+                # Flatten all colors into one list with category info
+                all_found_colors = []
+                
+                # Add black & white if present
+                if hsv_colors['black']:
+                    all_found_colors.append(('Schwarz', hsv_colors['black']))
+                if hsv_colors['white']:
+                    all_found_colors.append(('Weiß', hsv_colors['white']))
+                
+                # Add colored categories
+                for color_info in hsv_colors['red']:
+                    all_found_colors.append(('Rot', color_info))
+                for color_info in hsv_colors['green']:
+                    all_found_colors.append(('Grün', color_info))
+                for color_info in hsv_colors['blue']:
+                    all_found_colors.append(('Blau', color_info))
+                
+                # Store in session state
+                st.session_state.all_found_colors = all_found_colors
+                st.session_state.last_image_id = current_image_id
+                st.session_state.recompute_colors = False
+                
+                # Initialize checkbox states
+                if "color_checkbox_states" not in st.session_state:
+                    st.session_state.color_checkbox_states = [True] * len(all_found_colors)
+                    
+            except Exception as e:
+                st.session_state.all_found_colors = []
+                st.session_state.color_checkbox_states = []
+                st.session_state.recompute_colors = False
         
         else:
             # For demo images or when color detection is not available
@@ -740,6 +748,11 @@ with st.sidebar:
         # Initialize group_orders in session_state if not set
         if "group_orders_input" not in st.session_state:
             st.session_state["group_orders_input"] = preset_group_orders or "4"
+        
+        # Apply optimized group_orders if available (from Auto-Optimize button)
+        if st.session_state.get("apply_optimized_orders", False):
+            st.session_state["group_orders_input"] = st.session_state.get("optimized_group_orders", st.session_state["group_orders_input"])
+            st.session_state["apply_optimized_orders"] = False
         
         group_orders = st.text_input(
             "Group Orders",
@@ -1395,6 +1408,8 @@ if st.session_state.get("all_found_colors"):
                 st.session_state["suggested_group_order"] = suggested_group_order
                 # Flag setzen: nach Vorschlag generieren kein automatisches Prefill
                 st.session_state["skip_prefill_after_suggestion"] = True
+                # Flag für Farb-Neuberechnung
+                st.session_state["recompute_colors"] = True
                 
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
@@ -1733,9 +1748,12 @@ if st.session_state.get("suggestion_displayed", False):
                     
                     # Konvertiere zu String
                     optimized_str = ",".join(map(str, optimized_sequence))
-                    st.session_state["group_orders_input"] = optimized_str
+                    # Setze das Flag statt direkt group_orders_input zu ändern
+                    st.session_state["optimized_group_orders"] = optimized_str
+                    st.session_state["apply_optimized_orders"] = True
                     st.success(f"✅ Optimierte Group Orders: `{optimized_str}`")
                     st.info(f"📊 Analysierte {len(unique_colors)} Farben mit {len(transitions)} Übergängen")
+                    st.rerun()
                     
         except Exception as e:
             st.error(f"Fehler bei der Optimierung: {e}")
