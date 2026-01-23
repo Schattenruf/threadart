@@ -752,7 +752,7 @@ with st.sidebar:
 
         # Initialize group_orders in session_state if not set
         if "group_orders_input" not in st.session_state:
-            st.session_state["group_orders_input"] = preset_group_orders or "4"
+            st.session_state["group_orders_input"] = preset_group_orders or "2,3,4,1,3,2,1"
         
         # Apply optimized group_orders if available (from Auto-Optimize button)
         if st.session_state.get("apply_optimized_orders", False):
@@ -1463,54 +1463,81 @@ def apply_suggestion_callback():
                 darkest_idx = 0
             suggested_lines[darkest_idx] += remainder
     
-    # === Berechne intelligente Group Order ===
-    # Strategie: Erstelle Sequenz von hell nach dunkel für bessere Tiefe
-    # Mehrere Durchläufe, damit keine Farbe dominiert
-    # Dunklere Farben (besonders schwarz) öfter am Ende
-    
-    # Berechne Luminanz für jede Farbe (0.299*R + 0.587*G + 0.114*B)
-    luminances = []
-    for color in palette:
-        lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
-        luminances.append(lum)
-    
-    # Sortiere Farben nach Luminanz (hell -> dunkel)
-    # Das gibt uns die optimale Reihenfolge (helle unten, dunkle oben)
-    sorted_indices = sorted(range(len(palette)), key=lambda i: luminances[i], reverse=True)
-    
-    # Erstelle Group Order: 1-basiert!
+    # === Berechne intelligente Group Order basierend auf Farbübergängen ===
     num_colors = len(palette)
     
-    # Basis-Sequenz: Alle Farben von hell nach dunkel
-    base_sequence = [idx + 1 for idx in sorted_indices]  # +1 weil 1-basiert
+    # Versuche, Farbübergänge aus line_sequence zu analysieren
+    line_sequence = st.session_state.get("line_sequence", [])
     
-    # Anzahl der Basis-Loops basierend auf Farbanzahl
-    if num_colors <= 2:
-        num_loops = 4  # Wenige Farben -> mehr Loops
-    elif num_colors <= 4:
-        num_loops = 4
-    elif num_colors <= 6:
-        num_loops = 3
+    if line_sequence and len(line_sequence) > 1:
+        # Analysiere Farbübergänge aus dem generierten Bild
+        transitions = {}  # {(from_idx, to_idx): count}
+        color_hex_to_idx = {}  # Mapping von hex zu 1-based index
+        
+        for i, row in enumerate(palette):
+            hex_col = f"#{int(row[0]):02x}{int(row[1]):02x}{int(row[2]):02x}".lower()
+            color_hex_to_idx[hex_col] = i + 1  # 1-based
+        
+        # Zähle Übergänge
+        for i in range(len(line_sequence) - 1):
+            hex_from = line_sequence[i].get("color_hex", "").lower()
+            hex_to = line_sequence[i + 1].get("color_hex", "").lower()
+            
+            if hex_from in color_hex_to_idx and hex_to in color_hex_to_idx:
+                idx_from = color_hex_to_idx[hex_from]
+                idx_to = color_hex_to_idx[hex_to]
+                if idx_from != idx_to:  # Nur echte Übergänge
+                    key = (idx_from, idx_to)
+                    transitions[key] = transitions.get(key, 0) + 1
+        
+        # Baue Group Order basierend auf häufigsten Übergängen
+        if transitions:
+            suggested_sequence = []
+            visited = set()
+            current_idx = max(range(1, num_colors + 1), key=lambda i: sum(transitions.get((i, j), 0) for j in range(1, num_colors + 1)))
+            suggested_sequence.append(current_idx)
+            
+            # Greedy: Folge häufigsten Übergängen
+            while len(suggested_sequence) < min(20, num_colors * 5):
+                best_next = None
+                best_count = 0
+                
+                for (from_idx, to_idx), count in transitions.items():
+                    if from_idx == current_idx and count > best_count:
+                        best_next = to_idx
+                        best_count = count
+                
+                if best_next:
+                    suggested_sequence.append(best_next)
+                    current_idx = best_next
+                else:
+                    # Keine neuen Übergänge gefunden, starte neu mit häufigster
+                    remaining = [i for i in range(1, num_colors + 1) if i not in suggested_sequence]
+                    if remaining:
+                        current_idx = remaining[0]
+                        suggested_sequence.append(current_idx)
+                    else:
+                        break
+            
+            suggested_group_order = ",".join(map(str, suggested_sequence))
+        else:
+            # Fallback wenn keine Übergänge gefunden
+            suggested_group_order = "2,3,4,1,3,2,1" if num_colors == 4 else "1,2,3,4"
     else:
-        num_loops = 2  # Viele Farben -> weniger Loops
-    
-    # Erstelle Sequenz mit mehreren Durchläufen
-    group_order_list = []
-    for loop in range(num_loops):
-        group_order_list.extend(base_sequence)
-    
-    # Extra: Dunkelste Farbe(n) nochmal am Ende hinzufügen für Tiefe
-    # Finde die dunkelsten 1-2 Farben (max 2, aber mindestens 1)
-    num_darkest = min(2, num_colors)
-    darkest_indices = sorted(range(len(palette)), key=lambda i: luminances[i])[:num_darkest]
-    
-    # Füge dunkelste Farben extra am Ende hinzu (2-3x)
-    for idx in darkest_indices:
-        group_order_list.append(idx + 1)  # +1 weil 1-basiert
-        group_order_list.append(idx + 1)
-    
-    # Konvertiere zu String
-    suggested_group_order = ",".join(map(str, group_order_list))
+        # Fallback wenn keine line_sequence vorhanden
+        if num_colors <= 1:
+            suggested_group_order = "1"
+        elif num_colors == 2:
+            suggested_group_order = "2,1,2,1"
+        elif num_colors == 3:
+            suggested_group_order = "2,3,1,3,2,1"
+        elif num_colors == 4:
+            suggested_group_order = "2,3,4,1,3,2,1"
+        else:
+            # Mehr als 4 Farben
+            mid_colors = list(range(2, num_colors))
+            sequence = mid_colors + [num_colors, 1] + mid_colors[-2:] + [num_colors, 1]
+            suggested_group_order = ",".join(map(str, sequence))
     
     # Speichere in session_state
     st.session_state["suggested_group_order"] = suggested_group_order
