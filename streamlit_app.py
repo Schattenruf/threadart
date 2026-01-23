@@ -1106,13 +1106,34 @@ if st.session_state.generated_html:
                 try:
                     from pdf_export import export_to_pdf
                     
-                    # Get color information with debug
+                    # Get color information
                     detected_colors = st.session_state.get("all_found_colors", [])
-                    # all_found_colors is a list of tuples: (category_name, color_info_dict)
-                    color_names = [category for category, color_info in detected_colors]
-                    color_info_list = [color_info for category, color_info in detected_colors]
                     group_orders = st.session_state.get("group_orders", "")
                     n_nodes = st.session_state.get("n_nodes_real", 320)
+                    
+                    # Extract unique colors from line_sequence in order of appearance
+                    # This ensures color_names matches the order intended in group_orders
+                    hex_to_category_info = {}
+                    for category, color_info in detected_colors:
+                        hex_val = color_info.get('hex', '').lower()
+                        if hex_val:
+                            hex_to_category_info[hex_val] = (category, color_info)
+                    
+                    # Build color_names and color_info_list based on appearance order in seq
+                    seen_hexes = []
+                    for row in seq:
+                        hex_val = str(row.get("color_hex", "")).lower()
+                        if hex_val and hex_val not in seen_hexes:
+                            seen_hexes.append(hex_val)
+                    
+                    # Create color_names and color_info_list in the order they appear in seq
+                    color_names = []
+                    color_info_list = []
+                    for hex_val in seen_hexes:
+                        if hex_val in hex_to_category_info:
+                            category, color_info = hex_to_category_info[hex_val]
+                            color_names.append(category)
+                            color_info_list.append(color_info)
                     
                     # Debug info display
                     with st.expander("🔍 Debug Info", expanded=False):
