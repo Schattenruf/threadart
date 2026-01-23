@@ -1497,16 +1497,16 @@ def apply_suggestion_callback():
         dark_idx = color_indices_by_brightness[2] + 1
         suggested_sequence = [bright_idx, dark_idx, mid_idx, dark_idx, bright_idx, dark_idx]
     elif num_colors == 4:
-        # Strategie: Hellste, dann mittlere (dunkel zu hell), dann hellste wieder, dann dunkelste, dann mittlere wieder
+        # Strategie: Hellste, dann mittlere (dunkel zu hell), dann hellste wieder, dann dunkelste, dann mittlere wieder, dann dunkelste
         # Beispiel: [1=Schwarz, 2=#311007, 3=#853921, 4=#AFB52A(hell)]
         # Sortiert nach Helligkeit: [4, 3, 2, 1]
-        # Sequenz: 4, 2, 3, 4, 1, 2, 3
+        # Sequenz: 4, 2, 3, 4, 1, 2, 3, 1
         indices = [color_indices_by_brightness[i] + 1 for i in range(4)]
         brightest = indices[0]
         darkest = indices[3]
         mid1 = indices[2]  # dunklere mittlere
         mid2 = indices[1]  # hellere mittlere
-        suggested_sequence = [brightest, mid1, mid2, brightest, darkest, mid1, mid2]
+        suggested_sequence = [brightest, mid1, mid2, brightest, darkest, mid1, mid2, darkest]
     else:
         # Mehr als 4 Farben: Alterniere zwischen hell und dunkel
         suggested_sequence = []
