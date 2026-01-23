@@ -310,10 +310,10 @@ class ThreadArtPDFGenerator:
                 continue
             
             # Get color hex
-            color_hex = "#000000"
+            color_hex = self._get_color_hex(color_name)
             if color_info_list and color_idx < len(color_info_list):
                 color_info = color_info_list[color_idx]
-                color_hex = color_info.get('hex', '#000000')
+                color_hex = color_info.get('hex', color_hex)
             
             print(f"  Group {group_idx}: {color_name} ({total_groups_this_color} total, this is #{this_occurrence}), {len(group_lines)} lines, hex={color_hex}")
             
@@ -489,10 +489,10 @@ class ThreadArtPDFGenerator:
             
             # "Now = color X/Y" with hex + position info
             # Get color info if available
-            color_hex = "#000000"
+            color_hex = self._get_color_hex(color_name)
             if color_info_list and color_idx < len(color_info_list):
                 color_info = color_info_list[color_idx]
-                color_hex = color_info.get('hex', '#000000')
+                color_hex = color_info.get('hex', color_hex)
             
             instructions.append({
                 "type": "color_header",
