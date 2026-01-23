@@ -147,8 +147,8 @@ def extract_colors_hsv(image_pil):
     # Colored pixels
     non_grey_mask = ~(black_mask | white_mask)
 
-    # Hue ranges (expanded red range to catch dark reds/browns)
-    red_mask = hue_in_ranges(h, [(-30, 30)]) & non_grey_mask & (s >= MIN_SAT)
+    # Hue ranges (slightly expanded red range to catch dark reds)
+    red_mask = hue_in_ranges(h, [(-25, 25)]) & non_grey_mask & (s >= MIN_SAT)
     green_mask = hue_in_ranges(h, [(60, 170)]) & non_grey_mask & (s >= MIN_SAT)
     blue_mask = hue_in_ranges(h, [(200, 280)]) & non_grey_mask & (s >= MIN_SAT)
 
