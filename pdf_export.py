@@ -321,6 +321,10 @@ class ThreadArtPDFGenerator:
             lines_at_start = total_lines_so_far
             lines_at_end = total_lines_so_far + len(group_lines)
             
+            # Add page break marker at start of each color group
+            if this_occurrence == 1 and group_idx > 0:
+                all_instructions.append({"type": "page_break"})
+            
             all_instructions.append({
                 "type": "info",
                 "text": f"By Now {lines_at_start}/{total_lines}"
@@ -363,14 +367,15 @@ class ThreadArtPDFGenerator:
         current_color_hex = None  # Track current color for page breaks
         
         for instruction in all_instructions:
-            # Check for color change (new header) - force page break
-            if instruction.get("type") == "header" and current_page_instructions:
+            # Check for page break marker - force new page
+            if instruction.get("type") == "page_break" and current_page_instructions:
                 # Save current page before starting new color
                 page_path = f"{output_path}_page_{page_counter:03d}.pdf"
                 self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
                 page_list.append(page_path)
                 page_counter += 1
                 current_page_instructions = []
+                continue  # Don't add page_break to instructions
             
             # Add instruction
             current_page_instructions.append(instruction)
@@ -632,12 +637,12 @@ class ThreadArtPDFGenerator:
                     continue
                 
                 elif instr_type == "info":
-                    # "By Now" or "By End" lines - compact font size 13
+                    # "By Now" or "By End" lines - use smaller font but take full row space
                     c.setFont(self.font_name, 13)
                     c.setFillColor(black)
                     text = instruction.get("text", "")
                     c.drawString(base_x, y, text)
-                    current_row += 0.5  # Half row for header
+                    current_row += 1  # Full row to align with other columns
                 
                 elif instr_type == "color_header":
                     # "Now = white 1/3 (#hex)" format - size 15, with color
@@ -657,14 +662,13 @@ class ThreadArtPDFGenerator:
                     text = instruction.get("text", "")
                     c.drawString(base_x, y, f"NOW = {text}")
                     c.setFillColor(black)
-                    current_row += 1
+                    current_row += 1  # Full row to align with other columns
                     
-                    # Draw separator after header
-                    y_sep = y - 0.5 * cm
-                    c.setStrokeColor(gray)
-                    c.setLineWidth(0.5)
-                    c.line(base_x - 0.1 * cm, y_sep, base_x + main_col_width - 0.4 * cm, y_sep)
-                    current_row += 0.5  # Half row for separator
+                    # Optional: Draw separator after header
+                    # y_sep = y - 0.3 * cm
+                    # c.setStrokeColor(gray)
+                    # c.setLineWidth(0.5)
+                    # c.line(base_x - 0.1 * cm, y_sep, base_x + main_col_width - 0.4 * cm, y_sep)
                 
                 elif instr_type == "instruction":
                     # Main instruction line: [Start] [End] [Pos]
