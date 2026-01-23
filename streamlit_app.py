@@ -1497,23 +1497,16 @@ def apply_suggestion_callback():
         dark_idx = color_indices_by_brightness[2] + 1
         suggested_sequence = [bright_idx, dark_idx, mid_idx, dark_idx, bright_idx, dark_idx]
     elif num_colors == 4:
-        # Strategie: Nach hellen Farben immer dunkle Farben setzen
-        # Das verhindert Übersteurung
-        if len(bright_colors) >= 2 and len(dark_colors) >= 2:
-            # Helle und dunkle Farben vorhanden
-            b1, b2 = bright_colors[0] + 1, bright_colors[1] + 1
-            d1, d2 = dark_colors[0] + 1, dark_colors[1] + 1
-            # Alterniere: Hell1, Dunkel1, Hell2, Dunkel2, Hell1, Dunkel1, Hell2
-            suggested_sequence = [b1, d1, b2, d2, b1, d1, b2]
-        elif len(bright_colors) >= 1 and len(dark_colors) >= 3:
-            # Wenig helle, viele dunkle
-            b = bright_colors[0] + 1
-            d = [dark_colors[i] + 1 for i in range(min(3, len(dark_colors)))]
-            suggested_sequence = [b, d[0], d[1], d[2], b, d[0], b]
-        else:
-            # Fallback
-            indices = [color_indices_by_brightness[i] + 1 for i in range(4)]
-            suggested_sequence = [indices[0], indices[3], indices[1], indices[2], indices[0], indices[3]]
+        # Strategie: Hellste, dann mittlere (dunkel zu hell), dann hellste wieder, dann dunkelste, dann mittlere wieder
+        # Beispiel: [1=Schwarz, 2=#311007, 3=#853921, 4=#AFB52A(hell)]
+        # Sortiert nach Helligkeit: [4, 3, 2, 1]
+        # Sequenz: 4, 2, 3, 4, 1, 2, 3
+        indices = [color_indices_by_brightness[i] + 1 for i in range(4)]
+        brightest = indices[0]
+        darkest = indices[3]
+        mid1 = indices[2]  # dunklere mittlere
+        mid2 = indices[1]  # hellere mittlere
+        suggested_sequence = [brightest, mid1, mid2, brightest, darkest, mid1, mid2]
     else:
         # Mehr als 4 Farben: Alterniere zwischen hell und dunkel
         suggested_sequence = []
