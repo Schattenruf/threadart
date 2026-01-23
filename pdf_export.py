@@ -44,7 +44,7 @@ class PictureHangerFormatter:
     
     def format_node(self, node_idx: int) -> Tuple[str, str, str]:
         """
-        Convert node index to hanger or nail format.
+        Convert node index to hanger or nail format (1-based numbering).
         
         Returns:
             (number, position, full_label)
@@ -52,15 +52,16 @@ class PictureHangerFormatter:
             - For nails: (node_number, "", "Nail 84")
         """
         if self.use_hangers:
-            hanger_num = node_idx // 2
+            hanger_num = node_idx // 2 + 1  # 1-based hanger numbering
             position_idx = node_idx % 2
             position = "L" if position_idx == 0 else "R"
             label = f"Hanger {hanger_num:3d} {position}"
             return str(hanger_num), position, label
         else:
-            # Nail mode: 1 nail = 1 node
-            label = f"Nail {node_idx:3d}"
-            return str(node_idx), "", label
+            # Nail mode: 1 nail = 1 node (1-based numbering)
+            nail_num = node_idx + 1  # 1-based nail numbering
+            label = f"Nail {nail_num:3d}"
+            return str(nail_num), "", label
     
     def get_hanger_display(self, node_idx: int) -> str:
         """Get a nicely formatted display string for instructions."""
