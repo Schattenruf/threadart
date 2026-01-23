@@ -321,8 +321,8 @@ class ThreadArtPDFGenerator:
             lines_at_start = total_lines_so_far
             lines_at_end = total_lines_so_far + len(group_lines)
             
-            # Add page break marker at start of each color group
-            if this_occurrence == 1 and group_idx > 0:
+            # Add page break marker at start of each color group (except first)
+            if group_idx > 0:
                 all_instructions.append({"type": "page_break"})
             
             all_instructions.append({
