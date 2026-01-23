@@ -1463,81 +1463,53 @@ def apply_suggestion_callback():
                 darkest_idx = 0
             suggested_lines[darkest_idx] += remainder
     
-    # === Berechne intelligente Group Order basierend auf Farbübergängen ===
+    # === Berechne intelligente Group Order basierend auf Farbhistogramm ===
     num_colors = len(palette)
     
-    # Versuche, Farbübergänge aus line_sequence zu analysieren
-    line_sequence = st.session_state.get("line_sequence", [])
+    # Verwende Luminanz (Helligkeit) um eine intelligente Reihenfolge zu bauen
+    # Strategie: Helle Farben zuerst (als Basis), dann mittlere, dann dunkle (oben)
+    luminances = []
+    for color in palette:
+        lum = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
+        luminances.append(lum)
     
-    if line_sequence and len(line_sequence) > 1:
-        # Analysiere Farbübergänge aus dem generierten Bild
-        transitions = {}  # {(from_idx, to_idx): count}
-        color_hex_to_idx = {}  # Mapping von hex zu 1-based index
-        
-        for i, row in enumerate(palette):
-            hex_col = f"#{int(row[0]):02x}{int(row[1]):02x}{int(row[2]):02x}".lower()
-            color_hex_to_idx[hex_col] = i + 1  # 1-based
-        
-        # Zähle Übergänge
-        for i in range(len(line_sequence) - 1):
-            hex_from = line_sequence[i].get("color_hex", "").lower()
-            hex_to = line_sequence[i + 1].get("color_hex", "").lower()
-            
-            if hex_from in color_hex_to_idx and hex_to in color_hex_to_idx:
-                idx_from = color_hex_to_idx[hex_from]
-                idx_to = color_hex_to_idx[hex_to]
-                if idx_from != idx_to:  # Nur echte Übergänge
-                    key = (idx_from, idx_to)
-                    transitions[key] = transitions.get(key, 0) + 1
-        
-        # Baue Group Order basierend auf häufigsten Übergängen
-        if transitions:
-            suggested_sequence = []
-            visited = set()
-            current_idx = max(range(1, num_colors + 1), key=lambda i: sum(transitions.get((i, j), 0) for j in range(1, num_colors + 1)))
-            suggested_sequence.append(current_idx)
-            
-            # Greedy: Folge häufigsten Übergängen
-            while len(suggested_sequence) < min(20, num_colors * 5):
-                best_next = None
-                best_count = 0
-                
-                for (from_idx, to_idx), count in transitions.items():
-                    if from_idx == current_idx and count > best_count:
-                        best_next = to_idx
-                        best_count = count
-                
-                if best_next:
-                    suggested_sequence.append(best_next)
-                    current_idx = best_next
-                else:
-                    # Keine neuen Übergänge gefunden, starte neu mit häufigster
-                    remaining = [i for i in range(1, num_colors + 1) if i not in suggested_sequence]
-                    if remaining:
-                        current_idx = remaining[0]
-                        suggested_sequence.append(current_idx)
-                    else:
-                        break
-            
-            suggested_group_order = ",".join(map(str, suggested_sequence))
-        else:
-            # Fallback wenn keine Übergänge gefunden
-            suggested_group_order = "2,3,4,1,3,2,1" if num_colors == 4 else "1,2,3,4"
+    # Sortiere Farben nach Helligkeit
+    color_indices_by_brightness = sorted(range(num_colors), key=lambda i: luminances[i], reverse=True)  # Hell zu Dunkel
+    
+    # Baue Sequenz: Mittlere und helle zuerst (mehrmals), dunkle zuerst, dunkle zuletzt
+    suggested_sequence = []
+    
+    if num_colors == 1:
+        suggested_sequence = [1]
+    elif num_colors == 2:
+        # Hell, Dunkel, Hell, Dunkel
+        bright_idx = color_indices_by_brightness[0] + 1
+        dark_idx = color_indices_by_brightness[1] + 1
+        suggested_sequence = [bright_idx, dark_idx, bright_idx, dark_idx]
+    elif num_colors == 3:
+        # Bright, Mid, Dark, Mid, Bright, Dark
+        bright_idx = color_indices_by_brightness[0] + 1
+        mid_idx = color_indices_by_brightness[1] + 1
+        dark_idx = color_indices_by_brightness[2] + 1
+        suggested_sequence = [bright_idx, mid_idx, dark_idx, mid_idx, bright_idx, dark_idx]
+    elif num_colors == 4:
+        # [1] Bright, [2] Mid-High, [3] Mid-Low, [4] Dark
+        # Sequenz: Mid-High, Mid-Low, Dark, Bright, Mid-Low, Mid-High, Dark
+        indices = [color_indices_by_brightness[i] + 1 for i in range(4)]
+        bright, mid_high, mid_low, dark = indices
+        suggested_sequence = [mid_high, mid_low, dark, bright, mid_low, mid_high, dark]
     else:
-        # Fallback wenn keine line_sequence vorhanden
-        if num_colors <= 1:
-            suggested_group_order = "1"
-        elif num_colors == 2:
-            suggested_group_order = "2,1,2,1"
-        elif num_colors == 3:
-            suggested_group_order = "2,3,1,3,2,1"
-        elif num_colors == 4:
-            suggested_group_order = "2,3,4,1,3,2,1"
-        else:
-            # Mehr als 4 Farben
-            mid_colors = list(range(2, num_colors))
-            sequence = mid_colors + [num_colors, 1] + mid_colors[-2:] + [num_colors, 1]
-            suggested_group_order = ",".join(map(str, sequence))
+        # Mehr als 4 Farben: Verwende ähnliches Muster
+        # Mittlere zuerst, dann dunkle, dann helle
+        mid_start = num_colors // 2
+        suggested_sequence = []
+        for i in range(mid_start, num_colors):
+            suggested_sequence.append(color_indices_by_brightness[i] + 1)
+        for i in range(0, mid_start):
+            suggested_sequence.append(color_indices_by_brightness[i] + 1)
+        suggested_sequence.append(color_indices_by_brightness[-1] + 1)  # Dunkle am Ende
+    
+    suggested_group_order = ",".join(map(str, suggested_sequence))
     
     # Speichere in session_state
     st.session_state["suggested_group_order"] = suggested_group_order
@@ -1634,110 +1606,6 @@ if st.session_state.get("suggestion_displayed", False):
         key="apply_suggestion_to_ui",
         on_click=apply_suggestion_callback
     )
-    
-    # Auto-optimize group orders button (intelligente Farbreihenfolge nach Übergängen)
-    if st.button("🧠 Auto-Optimize Group Orders", key="auto_optimize_orders"):
-        try:
-            # Hole die line_sequence von der letzten Generierung
-            line_sequence = st.session_state.get("line_sequence", [])
-            
-            if not line_sequence or len(line_sequence) < 2:
-                st.warning("Keine ausreichenden Daten für Optimierung vorhanden. Bitte erst 'Generate Thread Art' ausführen.")
-            else:
-                # === Analysiere Farbtransitionen ===
-                # Zähle, wie oft Farbe A zu Farbe B übergeht
-                transitions = {}  # {(from_hex, to_hex): count}
-                color_frequency = {}  # {hex: count}
-                unique_colors = []  # Liste der eindeutigen Farben in Reihenfolge
-                hex_to_index = {}  # {hex: 1-based index}
-                
-                for i, row in enumerate(line_sequence):
-                    hex_col = row.get("color_hex", "").lower()
-                    color_frequency[hex_col] = color_frequency.get(hex_col, 0) + 1
-                    
-                    # Track eindeutige Farben in Reihenfolge
-                    if hex_col not in hex_to_index:
-                        unique_colors.append(hex_col)
-                        hex_to_index[hex_col] = len(unique_colors)  # 1-based
-                    
-                    # Zähle Übergänge
-                    if i < len(line_sequence) - 1:
-                        next_hex = line_sequence[i + 1].get("color_hex", "").lower()
-                        if hex_col != next_hex:  # Nur wenn Farbwechsel
-                            key = (hex_col, next_hex)
-                            transitions[key] = transitions.get(key, 0) + 1
-                
-                # === Greedy-Algorithmus: Baue Sequenz basierend auf häufigsten Übergängen ===
-                optimized_sequence = []
-                visited_colors = set()
-                max_length = min(30, len(unique_colors) * 5)  # Max 30 Einträge
-                
-                if unique_colors:
-                    # Start mit häufigster Farbe
-                    current_hex = max(color_frequency, key=color_frequency.get)
-                    current_index = hex_to_index.get(current_hex, 1)
-                    optimized_sequence.append(current_index)
-                    visited_colors.add(current_hex)
-                    
-                    # Baue Sequenz auf
-                    while len(optimized_sequence) < max_length and len(visited_colors) < len(unique_colors):
-                        best_next_hex = None
-                        best_count = 0
-                        
-                        # Finde häufigsten Übergang von current_hex zu irgendeiner unbesuchten Farbe
-                        for (from_hex, to_hex), count in sorted(transitions.items(), key=lambda x: x[1], reverse=True):
-                            if from_hex == current_hex and to_hex not in visited_colors:
-                                best_next_hex = to_hex
-                                best_count = count
-                                break
-                        
-                        if best_next_hex:
-                            # Nehme den häufigsten Übergang
-                            next_index = hex_to_index.get(best_next_hex, 1)
-                            optimized_sequence.append(next_index)
-                            visited_colors.add(best_next_hex)
-                            current_hex = best_next_hex
-                        else:
-                            # Wenn keine unbesuchten Übergänge, nimm häufigsten Übergang (auch mit besuchten)
-                            best_next_hex = None
-                            best_count = 0
-                            for (from_hex, to_hex), count in sorted(transitions.items(), key=lambda x: x[1], reverse=True):
-                                if from_hex == current_hex:
-                                    best_next_hex = to_hex
-                                    best_count = count
-                                    break
-                            
-                            if best_next_hex:
-                                next_index = hex_to_index.get(best_next_hex, 1)
-                                optimized_sequence.append(next_index)
-                                current_hex = best_next_hex
-                            else:
-                                # Letzte Option: nimm nächste unbesuchte Farbe
-                                for hex_col in unique_colors:
-                                    if hex_col not in visited_colors:
-                                        next_index = hex_to_index.get(hex_col, 1)
-                                        optimized_sequence.append(next_index)
-                                        visited_colors.add(hex_col)
-                                        current_hex = hex_col
-                                        break
-                                else:
-                                    # Alle besuchten, starte mit häufigster
-                                    current_hex = max(color_frequency, key=color_frequency.get)
-                                    next_index = hex_to_index.get(current_hex, 1)
-                                    if next_index not in optimized_sequence[-3:]:  # Verhindere zu viel Wiederholung
-                                        optimized_sequence.append(next_index)
-                    
-                    # Konvertiere zu String
-                    optimized_str = ",".join(map(str, optimized_sequence))
-                    # Setze das Flag statt direkt group_orders_input zu ändern
-                    st.session_state["optimized_group_orders"] = optimized_str
-                    st.session_state["apply_optimized_orders"] = True
-                    st.success(f"✅ Optimierte Group Orders: `{optimized_str}`")
-                    st.info(f"📊 Analysierte {len(unique_colors)} Farben mit {len(transitions)} Übergängen")
-                    st.rerun()
-                    
-        except Exception as e:
-            st.error(f"Fehler bei der Optimierung: {e}")
     
     # # Show embed code for Squarespace
     # st.subheader("Embed Code for Squarespace")
