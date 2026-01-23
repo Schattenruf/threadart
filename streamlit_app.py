@@ -759,6 +759,74 @@ with st.sidebar:
 We have 2 main tips here: firstly make sure to include enough loops so that no one color dominates the other colors by going on top and masking them all, and secondly make sure the darker colors are on top since this looks a lot better (in particular, we strongly recommend having black on top).
 """,
         )
+        
+        # Auto-generate intelligent group orders button
+        if st.button("🧠 Auto-Optimize Group Orders", key="auto_optimize_orders"):
+            if seq and color_names:
+                # Analyze the order of colors in the line_sequence
+                color_sequence = []
+                for row in seq:
+                    color_idx = row.get("color_index", 1)
+                    if color_idx not in color_sequence:
+                        color_sequence.append(color_idx)
+                
+                # Generate intelligent group orders by tracking color transitions
+                if len(color_sequence) > 0:
+                    # Build a graph of color transitions (how often color A is followed by color B)
+                    transitions = {}
+                    for i in range(len(seq) - 1):
+                        curr_color = seq[i].get("color_index", 1)
+                        next_color = seq[i + 1].get("color_index", 1)
+                        if curr_color != next_color:  # Only care about transitions
+                            key = (curr_color, next_color)
+                            transitions[key] = transitions.get(key, 0) + 1
+                    
+                    # Generate sequence by greedily picking the most common transition
+                    result = []
+                    used_colors = set()
+                    
+                    # Start with the color that appears first
+                    current_color = color_sequence[0]
+                    result.append(current_color)
+                    used_colors.add(current_color)
+                    
+                    # Keep adding colors based on how many times they appear after current
+                    max_iterations = len(color_sequence) * 3  # Limit iterations
+                    iteration = 0
+                    
+                    while iteration < max_iterations and len(result) < 30:  # Cap at 30 colors
+                        # Find the most likely next color
+                        best_next = None
+                        best_count = -1
+                        
+                        for (from_c, to_c), count in transitions.items():
+                            if from_c == current_color and count > best_count:
+                                best_next = to_c
+                                best_count = count
+                        
+                        if best_next is None or best_count <= 0:
+                            # No transitions found, pick next unused color or cycle
+                            for c in color_sequence:
+                                if c not in used_colors or iteration > len(color_sequence) * 2:
+                                    best_next = c
+                                    break
+                        
+                        if best_next is None:
+                            # Fallback: cycle through all colors
+                            best_next = color_sequence[len(result) % len(color_sequence)]
+                        
+                        result.append(best_next)
+                        current_color = best_next
+                        used_colors.add(best_next)
+                        iteration += 1
+                    
+                    # Convert to string
+                    optimized_orders = ",".join(str(c) for c in result)
+                    st.session_state["group_orders_input"] = optimized_orders
+                    st.success(f"✅ Optimized! New group orders: {optimized_orders}")
+                    st.rerun()
+            else:
+                st.warning("Generate thread art first to optimize group orders")
 
     # Color management
     st.subheader("Colors")
