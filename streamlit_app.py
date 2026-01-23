@@ -1170,7 +1170,9 @@ if st.session_state.generated_html:
                         num_rows=18,
                         include_stats=True,
                         version="n+1",
-                        use_hangers=use_hangers
+                        use_hangers=use_hangers,
+                        shape=shape,
+                        template_size=10  # cm
                     )
                     
                     if pdf_path and os.path.exists(pdf_path):
