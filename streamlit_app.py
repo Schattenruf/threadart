@@ -562,11 +562,11 @@ with st.sidebar:
         )
         
         # === Neue HSV-basierte Farberkennung mit Checkbox-Selection ===
-        # Only recompute if image changed OR if explicitly requested after "Vorschlag generieren"
+        # Only recompute if image changed (using id() for efficient comparison)
         current_image_id = id(image)
         image_changed = st.session_state.get("last_image_id") != current_image_id
         
-        if image_changed or st.session_state.get("recompute_colors", False):
+        if image_changed:
             try:
                 hsv_colors = extract_colors_hsv(image)
                 
@@ -590,18 +590,16 @@ with st.sidebar:
                 # Store in session state
                 st.session_state.all_found_colors = all_found_colors
                 st.session_state.last_image_id = current_image_id
-                st.session_state.recompute_colors = False
                 
-                # Initialize checkbox states
-                if "color_checkbox_states" not in st.session_state:
-                    st.session_state.color_checkbox_states = [True] * len(all_found_colors)
+                # Initialize checkbox states (alle Farben sind initial ausgewählt)
+                st.session_state.color_checkbox_states = [True] * len(all_found_colors)
                     
             except Exception as e:
                 st.session_state.all_found_colors = []
                 st.session_state.color_checkbox_states = []
-                st.session_state.recompute_colors = False
         
-        else:
+        # Falls noch keine Farben geladen, verwende decompose_data fallback
+        if not st.session_state.get("all_found_colors"):
             # For demo images or when color detection is not available
             dd = st.session_state.get("decompose_data")
             if dd:
@@ -1400,6 +1398,18 @@ if st.session_state.get("all_found_colors"):
                 
                 suggested_group_order = ",".join(map(str, group_order_list))
                 
+                # Speichere Palette + Lines in session_state (für rechte Seite Color Picker Widgets)
+                widget_version = st.session_state.get("widget_version", 0)
+                new_version = widget_version + 1
+                st.session_state["widget_version"] = new_version
+                widget_suffix = f"_v{new_version}"
+                
+                for i, color in enumerate(selected_colors):
+                    hex_col = f"#{int(color[0]):02x}{int(color[1]):02x}{int(color[2]):02x}"
+                    st.session_state[f"color_pick_{i}{widget_suffix}"] = hex_col
+                    st.session_state[f"lines_{i}{widget_suffix}"] = 1000  # Default value
+                    st.session_state[f"darkness_{i}{widget_suffix}"] = 0.17  # Default value
+                
                 st.session_state.decompose_data = {
                     "palette": selected_colors,
                     "color_histogram": selected_hists
@@ -1408,8 +1418,6 @@ if st.session_state.get("all_found_colors"):
                 st.session_state["suggested_group_order"] = suggested_group_order
                 # Flag setzen: nach Vorschlag generieren kein automatisches Prefill
                 st.session_state["skip_prefill_after_suggestion"] = True
-                # Flag für Farb-Neuberechnung
-                st.session_state["recompute_colors"] = True
                 
                 # Klappe Farben-Palette ein
                 st.session_state.color_palette_expanded = False
