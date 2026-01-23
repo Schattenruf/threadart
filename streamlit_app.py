@@ -563,30 +563,40 @@ with st.sidebar:
         
         # === Neue HSV-basierte Farberkennung mit Checkbox-Selection ===
         try:
-            hsv_colors = extract_colors_hsv(image)
+            # Cache color detection results to avoid re-computing on every interaction
+            # Use image bytes as cache key
+            image_bytes = io.BytesIO()
+            image.save(image_bytes, format='PNG')
+            image_cache_key = hash(image_bytes.getvalue())
             
-            # Flatten all colors into one list with category info
-            all_found_colors = []
-            
-            # Add black & white if present
-            if hsv_colors['black']:
-                all_found_colors.append(('Schwarz', hsv_colors['black']))
-            if hsv_colors['white']:
-                all_found_colors.append(('Weiß', hsv_colors['white']))
-            
-            # Add colored categories
-            for color_info in hsv_colors['red']:
-                all_found_colors.append(('Rot', color_info))
-            for color_info in hsv_colors['green']:
-                all_found_colors.append(('Grün', color_info))
-            for color_info in hsv_colors['blue']:
-                all_found_colors.append(('Blau', color_info))
-            
-            # Store in session state
-            st.session_state.all_found_colors = all_found_colors
-            
-            # Initialize checkbox states
-            if "color_checkbox_states" not in st.session_state:
+            # Check if we have cached results for this image
+            if (st.session_state.get("cached_image_key") != image_cache_key or 
+                not st.session_state.get("all_found_colors")):
+                # Recompute colors only if image changed
+                hsv_colors = extract_colors_hsv(image)
+                
+                # Flatten all colors into one list with category info
+                all_found_colors = []
+                
+                # Add black & white if present
+                if hsv_colors['black']:
+                    all_found_colors.append(('Schwarz', hsv_colors['black']))
+                if hsv_colors['white']:
+                    all_found_colors.append(('Weiß', hsv_colors['white']))
+                
+                # Add colored categories
+                for color_info in hsv_colors['red']:
+                    all_found_colors.append(('Rot', color_info))
+                for color_info in hsv_colors['green']:
+                    all_found_colors.append(('Grün', color_info))
+                for color_info in hsv_colors['blue']:
+                    all_found_colors.append(('Blau', color_info))
+                
+                # Store in session state
+                st.session_state.all_found_colors = all_found_colors
+                st.session_state.cached_image_key = image_cache_key
+                
+                # Initialize checkbox states
                 st.session_state.color_checkbox_states = [True] * len(all_found_colors)
                 
         except Exception as e:
@@ -1287,7 +1297,7 @@ if st.session_state.get("all_found_colors"):
                         f'<div style="background-color: {hex_color}; height: 50px; border-radius: 5px; border: 2px solid #ccc;"></div>',
                         unsafe_allow_html=True
                     )
-                    st.caption(f"{percent:.2%}")
+                    st.caption(f"{percent:.1%}")
         
         # Button zum generieren
         if st.button("✨ Vorschlag generieren"):
