@@ -173,6 +173,9 @@ class ThreadArtPDFGenerator:
             num_rows: Number of rows per page
             include_stats: Whether to include statistics
             version: Version numbering ("n+1" for auto-increment, None for single, or int)
+            use_hangers: True for hangers (2 nodes per hanger), False for nails
+            shape: "Rectangle" or "Ellipse" for nail/hanger layout
+            template_size: Size of nail/hanger template in cm
         
         Returns:
             Path to generated PDF
@@ -191,7 +194,10 @@ class ThreadArtPDFGenerator:
             formatter=formatter,
             output_path=output_path,
             num_cols=num_cols,
-            num_rows=num_rows
+            num_rows=num_rows,
+            shape=shape,
+            template_size=template_size,
+            n_nodes=n_nodes
         )
 
         # Add a dedicated schematic template page (pins / hangers positions)
@@ -438,10 +444,13 @@ class ThreadArtPDFGenerator:
         color_names: List[str],
         color_info_list: List[Dict],
         group_orders: str,
-        formatter: PictureHangerFormatter,
+        formatter: 'PictureHangerFormatter',
         output_path: str,
         num_cols: int,
-        num_rows: int
+        num_rows: int,
+        shape: str = "Rectangle",
+        template_size: float = 10,
+        n_nodes: int = 320
     ) -> List[str]:
         """Generate instruction pages following group_orders EXACTLY (like the template)."""
         width, height = A4
@@ -576,7 +585,10 @@ class ThreadArtPDFGenerator:
             if instruction.get("type") == "page_break" and current_page_instructions:
                 # Save current page before starting new color
                 page_path = f"{output_path}_page_{page_counter:03d}.pdf"
-                self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
+                self._draw_page(
+                    page_path, current_page_instructions, num_cols, num_rows, width, height,
+                    shape=shape, template_size=template_size, n_nodes=n_nodes
+                )
                 page_list.append(page_path)
                 page_counter += 1
                 current_page_instructions = []
@@ -595,7 +607,10 @@ class ThreadArtPDFGenerator:
             if instruction_count >= (num_cols * num_rows):
                 # Save page
                 page_path = f"{output_path}_page_{page_counter:03d}.pdf"
-                self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
+                self._draw_page(
+                    page_path, current_page_instructions, num_cols, num_rows, width, height,
+                    shape=shape, template_size=template_size, n_nodes=n_nodes
+                )
                 page_list.append(page_path)
                 page_counter += 1
                 current_page_instructions = []
@@ -603,7 +618,10 @@ class ThreadArtPDFGenerator:
         # Save last page
         if current_page_instructions:
             page_path = f"{output_path}_page_{page_counter:03d}.pdf"
-            self._draw_page(page_path, current_page_instructions, num_cols, num_rows, width, height)
+            self._draw_page(
+                page_path, current_page_instructions, num_cols, num_rows, width, height,
+                shape=shape, template_size=template_size, n_nodes=n_nodes
+            )
             page_list.append(page_path)
         
         return page_list
@@ -771,9 +789,12 @@ class ThreadArtPDFGenerator:
         num_cols: int,
         num_rows: int,
         width: float,
-        height: float
+        height: float,
+        shape: str = "Rectangle",
+        template_size: float = 10,
+        n_nodes: int = 320
     ) -> None:
-        """Draw a single instruction page with 3 main columns."""
+        """Draw a single instruction page with 3 main columns and nail/hanger template at bottom."""
         c = canvas.Canvas(output_path, pagesize=(width, height))
         
         # Layout: 3 main columns, max num_rows rows per column
@@ -918,7 +939,67 @@ class ThreadArtPDFGenerator:
                 traceback.print_exc()
                 continue
         
+        # Draw nail/hanger template at bottom
+        template_y = 1.5 * cm
+        self._draw_template(c, template_y, shape, template_size, n_nodes)
+        
         c.save()
+    
+    def _draw_template(
+        self,
+        c: 'canvas.Canvas',
+        base_y: float,
+        shape: str,
+        template_size: float,
+        n_nodes: int
+    ) -> None:
+        """Draw nail/hanger template at bottom of page.
+        
+        Args:
+            c: ReportLab canvas
+            base_y: Y position for template (in cm)
+            shape: "Rectangle" or "Ellipse"
+            template_size: Size in cm
+            n_nodes: Number of nodes/hangers
+        """
+        # Get coordinates
+        coords = self._calculate_pin_coordinates(n_nodes, shape, template_size)
+        
+        # Template area
+        template_width = template_size * cm
+        template_height = template_size * cm
+        page_width = c._pagesize[0]
+        template_x = (page_width - template_width) / 2  # Center horizontally
+        
+        # Draw outer border
+        c.setStrokeColor(black)
+        c.setLineWidth(1)
+        c.rect(template_x, base_y, template_width, template_height, fill=False)
+        
+        # Draw pins/hangers
+        c.setFillColor(black)
+        pin_radius = 0.15 * cm
+        
+        for node_idx, (x, y) in coords.items():
+            # Adjust to page coordinates
+            page_x = template_x + x
+            page_y = base_y + y
+            
+            # Draw circle for each pin
+            c.circle(page_x, page_y, pin_radius, fill=False, stroke=True)
+            
+            # Draw number (smaller font for large n_nodes)
+            if n_nodes > 100:
+                font_size = max(6, 10 - n_nodes // 100)
+            else:
+                font_size = 8
+            
+            c.setFont(self.font_name, font_size)
+            c.setFillColor(black)
+            
+            # Center number in circle
+            text = str(node_idx)
+            c.drawCentredString(page_x, page_y - font_size/4, text)
     
     def _merge_pages_to_pdf(
         self,
@@ -994,6 +1075,90 @@ class ThreadArtPDFGenerator:
             print(f"Average lines per hanger: {avg_usage:.1f}")
             print(f"Most used hanger: Hanger {max(hanger_usage, key=hanger_usage.get)} ({hanger_usage[max(hanger_usage, key=hanger_usage.get)]} connections)")
             print(f"Least used hanger: Hanger {min(hanger_usage, key=hanger_usage.get)} ({hanger_usage[min(hanger_usage, key=hanger_usage.get)]} connections)")
+
+    def _calculate_pin_coordinates(
+        self,
+        n_nodes: int,
+        shape: str,
+        template_size: float
+    ) -> Dict[int, Tuple[float, float]]:
+        """Calculate coordinates for nails/hangers based on shape.
+        
+        Args:
+            n_nodes: Total number of nodes
+            shape: "Rectangle" or "Ellipse"
+            template_size: Size in cm (will be converted to points)
+        
+        Returns:
+            Dict mapping node_idx to (x, y) coordinates
+        """
+        coords = {}
+        size_pt = template_size * cm
+        center_x = size_pt / 2
+        center_y = size_pt / 2
+        
+        if shape == "Ellipse":
+            # Place pins in ellipse arrangement
+            angles = np.linspace(0, 2 * np.pi, n_nodes, endpoint=False)
+            radius_x = (size_pt / 2) * 0.9
+            radius_y = (size_pt / 2) * 0.9
+            
+            for i, angle in enumerate(angles):
+                x = center_x + radius_x * np.cos(angle)
+                y = center_y + radius_y * np.sin(angle)
+                coords[i] = (x, y)
+        
+        else:  # Rectangle
+            # Place pins on 4 sides
+            pins_per_side = n_nodes // 4
+            remainder = n_nodes % 4
+            
+            margin = size_pt * 0.1
+            width = size_pt - 2 * margin
+            height = size_pt - 2 * margin
+            
+            idx = 0
+            
+            # Top side (left to right)
+            for i in range(pins_per_side + (1 if remainder > 0 else 0)):
+                if idx >= n_nodes:
+                    break
+                x = margin + (width * i / (pins_per_side + (1 if remainder > 0 else 0)))
+                y = size_pt - margin
+                coords[idx] = (x, y)
+                idx += 1
+                remainder -= 1
+            
+            # Right side (top to bottom)
+            for i in range(pins_per_side + (1 if remainder > 0 else 0)):
+                if idx >= n_nodes:
+                    break
+                x = size_pt - margin
+                y = size_pt - margin - (height * i / (pins_per_side + (1 if remainder > 0 else 0)))
+                coords[idx] = (x, y)
+                idx += 1
+                remainder -= 1
+            
+            # Bottom side (right to left)
+            for i in range(pins_per_side + (1 if remainder > 0 else 0)):
+                if idx >= n_nodes:
+                    break
+                x = size_pt - margin - (width * i / (pins_per_side + (1 if remainder > 0 else 0)))
+                y = margin
+                coords[idx] = (x, y)
+                idx += 1
+                remainder -= 1
+            
+            # Left side (bottom to top)
+            for i in range(pins_per_side + (1 if remainder > 0 else 0)):
+                if idx >= n_nodes:
+                    break
+                x = margin
+                y = margin + (height * i / (pins_per_side + (1 if remainder > 0 else 0)))
+                coords[idx] = (x, y)
+                idx += 1
+        
+        return coords
 
 
 def export_to_pdf(
