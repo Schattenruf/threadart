@@ -1129,11 +1129,15 @@ if st.session_state.generated_html:
                     # Create color_names and color_info_list in the order they appear in seq
                     color_names = []
                     color_info_list = []
-                    for hex_val in seen_hexes:
+                    for i, hex_val in enumerate(seen_hexes):
                         if hex_val in hex_to_category_info:
                             category, color_info = hex_to_category_info[hex_val]
                             color_names.append(category)
                             color_info_list.append(color_info)
+                        else:
+                            # Fallback: Use generic name for colors not in detected_colors
+                            color_names.append(f"Color {i+1}")
+                            color_info_list.append({"hex": hex_val, "name": f"Color {i+1}"})
                     
                     # IMPORTANT: Re-index seq with new color_index values!
                     # Build mapping from old hex → new 1-based index
