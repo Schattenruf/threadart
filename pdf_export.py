@@ -43,11 +43,13 @@ class PictureHangerFormatter:
         self.n_hangers = (n_nodes + 1) // 2  # Each hanger has 2 attachment points
     
     def format_node(self, node_idx: int) -> Tuple[str, str, str]:
-        """Format a node index for hanger or nail mode.
-
+        """
+        Convert node index to hanger or nail format.
+        
         Returns:
-            - Hanger mode: (hanger_number, "L"/"R", "Hanger 42 L")
-            - Nail mode: (node_number, "", "Nail 84")
+            (number, position, full_label)
+            - For hangers: (hanger_number, "L"/"R", "Hanger 42 L")
+            - For nails: (node_number, "", "Nail 84")
         """
         if self.use_hangers:
             hanger_num = node_idx // 2
