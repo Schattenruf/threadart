@@ -147,8 +147,8 @@ def extract_colors_hsv(image_pil):
     # Colored pixels
     non_grey_mask = ~(black_mask | white_mask)
 
-    # Hue ranges (slightly expanded red range to catch dark reds)
-    red_mask = hue_in_ranges(h, [(-25, 25)]) & non_grey_mask & (s >= MIN_SAT)
+    # Hue ranges
+    red_mask = hue_in_ranges(h, [(-20, 20)]) & non_grey_mask & (s >= MIN_SAT)
     green_mask = hue_in_ranges(h, [(60, 170)]) & non_grey_mask & (s >= MIN_SAT)
     blue_mask = hue_in_ranges(h, [(200, 280)]) & non_grey_mask & (s >= MIN_SAT)
 
@@ -1126,6 +1126,37 @@ if st.session_state.generated_html:
                         if hex_val and hex_val not in seen_hexes:
                             seen_hexes.append(hex_val)
                     
+                    # Helper function to categorize unknown hex colors based on HSV
+                    def categorize_hex_by_hsv(hex_str):
+                        """Categorize a hex color by its HSV hue"""
+                        try:
+                            r = int(hex_str[1:3], 16)
+                            g = int(hex_str[3:5], 16)
+                            b = int(hex_str[5:7], 16)
+                            # Convert RGB to HSV
+                            rgb_arr = np.array([[[r, g, b]]], dtype=np.uint8)
+                            hsv_arr = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2HSV)
+                            h = hsv_arr[0, 0, 0] * 2  # OpenCV HSV hue is 0-180, convert to 0-360
+                            s = hsv_arr[0, 0, 1] / 255.0
+                            
+                            # Categorize by hue
+                            if h < 30 or h >= 330:  # Red
+                                return "Rot"
+                            elif 30 <= h < 90:  # Green
+                                return "Grün"
+                            elif 90 <= h < 150:  # Cyan/Green
+                                return "Grün"
+                            elif 150 <= h < 210:  # Blue
+                                return "Blau"
+                            elif 210 <= h < 270:  # Purple
+                                return "Blau"
+                            elif 270 <= h < 330:  # Magenta
+                                return "Rot"
+                            else:
+                                return f"Color"
+                        except:
+                            return f"Color"
+                    
                     # Create color_names and color_info_list in the order they appear in seq
                     color_names = []
                     color_info_list = []
@@ -1135,9 +1166,10 @@ if st.session_state.generated_html:
                             color_names.append(category)
                             color_info_list.append(color_info)
                         else:
-                            # Fallback: Use generic name for colors not in detected_colors
-                            color_names.append(f"Color {i+1}")
-                            color_info_list.append({"hex": hex_val, "name": f"Color {i+1}"})
+                            # Fallback: Categorize by HSV hue
+                            category = categorize_hex_by_hsv(hex_val)
+                            color_names.append(category)
+                            color_info_list.append({"hex": hex_val, "name": category})
                     
                     # IMPORTANT: Re-index seq with new color_index values!
                     # Build mapping from old hex → new 1-based index
