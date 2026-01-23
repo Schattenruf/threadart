@@ -1128,34 +1128,38 @@ if st.session_state.generated_html:
                     
                     # Helper function to categorize unknown hex colors based on HSV
                     def categorize_hex_by_hsv(hex_str):
-                        """Categorize a hex color by its HSV hue"""
+                        """Categorize a hex color by its HSV hue using the existing rgb_to_hsv function"""
                         try:
-                            r = int(hex_str[1:3], 16)
-                            g = int(hex_str[3:5], 16)
-                            b = int(hex_str[5:7], 16)
-                            # Convert RGB to HSV
-                            rgb_arr = np.array([[[r, g, b]]], dtype=np.uint8)
-                            hsv_arr = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2HSV)
-                            h = hsv_arr[0, 0, 0] * 2  # OpenCV HSV hue is 0-180, convert to 0-360
-                            s = hsv_arr[0, 0, 1] / 255.0
+                            # Parse hex to RGB
+                            hex_clean = hex_str.lstrip('#').lower()
+                            if len(hex_clean) != 6:
+                                return "Color"
+                            r = int(hex_clean[0:2], 16)
+                            g = int(hex_clean[2:4], 16)
+                            b = int(hex_clean[4:6], 16)
                             
-                            # Categorize by hue
-                            if h < 30 or h >= 330:  # Red
+                            # Use existing rgb_to_hsv function
+                            rgb_arr = np.array([[[r, g, b]]], dtype=np.uint8)
+                            hsv_arr = rgb_to_hsv(rgb_arr)
+                            h = hsv_arr[0, 0, 0] * 360  # Convert to 0-360 range
+                            s = hsv_arr[0, 0, 1]
+                            v = hsv_arr[0, 0, 2]
+                            
+                            # Categorize by hue (allowing wider red range for brown/dark reds)
+                            # Red: -30 to 30 degrees (includes browns around 10-20)
+                            if h < 30 or h >= 330:
                                 return "Rot"
-                            elif 30 <= h < 90:  # Green
+                            # Green: 60-170 degrees
+                            elif 60 <= h < 170:
                                 return "Grün"
-                            elif 90 <= h < 150:  # Cyan/Green
-                                return "Grün"
-                            elif 150 <= h < 210:  # Blue
+                            # Blue: 200-280 degrees
+                            elif 200 <= h < 280:
                                 return "Blau"
-                            elif 210 <= h < 270:  # Purple
-                                return "Blau"
-                            elif 270 <= h < 330:  # Magenta
-                                return "Rot"
                             else:
-                                return f"Color"
-                        except:
-                            return f"Color"
+                                return "Color"
+                        except Exception as e:
+                            print(f"Error categorizing {hex_str}: {e}")
+                            return "Color"
                     
                     # Create color_names and color_info_list in the order they appear in seq
                     color_names = []
