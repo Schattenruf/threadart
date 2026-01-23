@@ -226,6 +226,9 @@ def decompose_image(img_obj, n_lines_total=10000):
             render_color_line(pal[k], k.ljust(max_len_color_name), n_lines_per_color[idx])
 
         st.code(f"`n_lines_per_color` for you to copy: {n_lines_per_color}")
+        
+        # Speichere n_lines_per_color für "Vorschlag übernehmen"
+        return n_lines_per_color
 
     # Case B: palette is a list of tuples
     elif isinstance(pal, (list, tuple)):
@@ -252,10 +255,13 @@ def decompose_image(img_obj, n_lines_total=10000):
             render_color_line(c, f"Color {idx+1}", n_lines_per_color[idx])
 
         st.code(f"`n_lines_per_color` for you to copy: {n_lines_per_color}")
+        
+        # Speichere n_lines_per_color für "Vorschlag übernehmen"
+        return n_lines_per_color
 
     else:
         st.warning("Unrecognized palette format. Expected dict or list of RGB tuples.")
-        return
+        return None
 # ------------------------------------------------------------------
 
 # Apply custom CSS for a clean, minimalist look
@@ -847,46 +853,51 @@ We have 2 main tips here: firstly make sure to include enough loops so that no o
     # KRITISCH: Benutze den aktuellen Widget-Version Counter für Keys
     widget_version = st.session_state.get("widget_version", 0)
     widget_suffix = f"_v{widget_version}"
+    
+    # Initialisiere die session_state Keys VOR der Widget-Erstellung (um Warnings zu vermeiden)
+    for i in range(num_colors_to_render):
+        # Color picker
+        if f"color_pick_{i}{widget_suffix}" not in st.session_state:
+            hex_default = f"#{palette[i][0]:02x}{palette[i][1]:02x}{palette[i][2]:02x}"
+            st.session_state[f"color_pick_{i}{widget_suffix}"] = hex_default
+        
+        # Lines
+        if f"lines_{i}{widget_suffix}" not in st.session_state:
+            lines_default = max(100, int(n_lines[i]))
+            st.session_state[f"lines_{i}{widget_suffix}"] = lines_default
+        
+        # Darkness
+        if f"darkness_{i}{widget_suffix}" not in st.session_state:
+            st.session_state[f"darkness_{i}{widget_suffix}"] = darkness_values[i]
 
     for i in range(num_colors_to_render):
         # st.markdown(f"##### Color {i + 1}")
         col1, col2, col3 = st.columns([1, 2, 2])
 
         with col1:
-            # Lese von session_state mit dem aktuellen suffix
-            hex_default = f"#{palette[i][0]:02x}{palette[i][1]:02x}{palette[i][2]:02x}"
-            hex_from_state = st.session_state.get(f"color_pick_{i}{widget_suffix}", hex_default)
+            # Widget liest automatisch aus session_state wenn key verwendet wird
             color_hex = st.color_picker(
                 "Color",
-                hex_from_state,
                 key=f"color_pick_{i}{widget_suffix}",
             )
             r, g, b = int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
 
         with col2:
-            # Lese von session_state mit dem aktuellen suffix
-            # Stelle sicher, dass der Wert nie unter dem Widget-Minimum liegt
-            lines_default = max(100, int(n_lines[i]))
-            lines_from_state = st.session_state.get(f"lines_{i}{widget_suffix}", lines_default)
-            lines_from_state = max(100, int(lines_from_state))
+            # Widget liest automatisch aus session_state wenn key verwendet wird
             lines = st.number_input(
                 "Lines",
                 min_value=100,
                 max_value=15000,
-                value=lines_from_state,
                 key=f"lines_{i}{widget_suffix}",
                 help="The total number of lines we'll draw for this color. 3 guidelines to consider here: (1) the line numbers should be roughly in proportion with their density in your image, (2) you should make sure to include a lot of black lines for most images because that's an important component of making a good piece of thread art, and (3) you should aim for about 6000 - 20000 total lues when summed over all colors (the exact number depends on some of your other parameters, and how detailed you want the piece to be).",
             )
 
         with col3:
-            # Lese von session_state mit dem aktuellen suffix
-            darkness_default = darkness_values[i]
-            darkness_from_state = st.session_state.get(f"darkness_{i}{widget_suffix}", darkness_default)
+            # Widget liest automatisch aus session_state wenn key verwendet wird
             darkness = st.number_input(
                 "Darkness",
                 min_value=0.05,
                 max_value=0.3,
-                value=darkness_from_state,
                 key=f"darkness_{i}{widget_suffix}",
                 step=0.01,
                 help="The float value we'll subtract from pixels after each line is drawn (pixels start at a maximum value of 1.0). Lines are constantly drawn through the regions whose pixels have the highest average value. Smaller values here will produce images with a higher contrast (because we draw more lines in the dark areas before moving to the light areas).",
@@ -1422,26 +1433,27 @@ def apply_suggestion_callback():
     
     data = st.session_state.decompose_data
     palette = data["palette"]
-    histogram = data["color_histogram"]
-    n_lines_total = st.session_state.get("decompose_total_lines_input", 10000)
     
-    # Validate and normalize histogram to list of numbers
-    try:
-        if histogram and isinstance(histogram[0], dict):
-            histogram = [item.get('percent', 0) for item in histogram]
-        elif histogram and isinstance(histogram[0], (list, tuple)):
-            histogram = [float(item[0]) if item else 0 for item in histogram]
-        histogram = [float(h) if not isinstance(h, (list, tuple, dict)) else 0 for h in histogram]
-    except Exception:
-        histogram = [1.0 / len(palette)] * len(palette)
-    
-    # Berechne Linienzahlen basierend auf Histogram
-    # Ziel: Top-Farbe (höchste Prozent) nicht weiter erhöhen; kleine Farben auf MIN fixieren;
-    # notwendige Anpassungen nur über die niedrigeren Farben verteilen.
-
-    MIN_LINES = 100
-    # Rohwerte nach Verteilung (Kategorie-bereinigt)
-    raw_lines = [int(round(h * n_lines_total)) for h in histogram]
+    # Verwende die vorberechneten Linienzahlen aus decompose_image
+    if "n_lines_per_color" in data:
+        suggested_lines = data["n_lines_per_color"]
+    else:
+        # Fallback: Berechne selbst wenn nicht vorhanden
+        histogram = data["color_histogram"]
+        n_lines_total = st.session_state.get("decompose_total_lines_input", 10000)
+        
+        # Validate and normalize histogram to list of numbers
+        try:
+            if histogram and isinstance(histogram[0], dict):
+                histogram = [item.get('percent', 0) for item in histogram]
+            elif histogram and isinstance(histogram[0], (list, tuple)):
+                histogram = [float(item[0]) if item else 0 for item in histogram]
+            histogram = [float(h) if not isinstance(h, (list, tuple, dict)) else 0 for h in histogram]
+        except Exception:
+            histogram = [1.0 / len(palette)] * len(palette)
+        
+        MIN_LINES = 100
+        raw_lines = [int(round(h * n_lines_total)) for h in histogram]
 
     # Top-Farbe (höchster Prozentanteil) bestimmen
     top_idx = max(range(len(histogram)), key=lambda i: histogram[i]) if histogram else 0
@@ -1622,7 +1634,10 @@ if st.button("Vorschlag anzeigen", key="show_decompose_global"):
         data = st.session_state.decompose_data
         obj = SimpleNamespace(palette=data["palette"], color_histogram=data["color_histogram"])
         try:
-            decompose_image(obj, n_lines_total=n_lines_total_input)
+            n_lines_per_color = decompose_image(obj, n_lines_total=n_lines_total_input)
+            # Speichere die berechneten Linienzahlen
+            if n_lines_per_color:
+                st.session_state.decompose_data["n_lines_per_color"] = n_lines_per_color
         except Exception as e:
             st.error(f"Fehler beim Anzeigen der Verteilung: {e}")
     else:
