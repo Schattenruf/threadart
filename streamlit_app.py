@@ -1399,18 +1399,6 @@ if st.session_state.get("all_found_colors"):
                 
                 suggested_group_order = ",".join(map(str, group_order_list))
                 
-                # Speichere Palette + Lines in session_state (für rechte Seite Color Picker Widgets)
-                widget_version = st.session_state.get("widget_version", 0)
-                new_version = widget_version + 1
-                st.session_state["widget_version"] = new_version
-                widget_suffix = f"_v{new_version}"
-                
-                for i, color in enumerate(selected_colors):
-                    hex_col = f"#{int(color[0]):02x}{int(color[1]):02x}{int(color[2]):02x}"
-                    st.session_state[f"color_pick_{i}{widget_suffix}"] = hex_col
-                    st.session_state[f"lines_{i}{widget_suffix}"] = 1000  # Default value
-                    st.session_state[f"darkness_{i}{widget_suffix}"] = 0.17  # Default value
-                
                 st.session_state.decompose_data = {
                     "palette": selected_colors,
                     "color_histogram": selected_hists
@@ -1600,15 +1588,15 @@ def apply_suggestion_callback():
     # Prefill-Flag zurücksetzen, da jetzt bewusst übernommen wurde
     st.session_state["skip_prefill_after_suggestion"] = False
     
-    # Lösche ALLE alten Widget-Keys - mit UND ohne Suffix!
-    # Das ist wichtig, weil Streamlit Widgets mit ihren Keys cached
-    for version in range(10):  # Check versions 0-9
+    # Lösche ALTE Widget-Keys (aber nicht die neuen mit new_version!)
+    for version in range(new_version):  # Nur alte Versionen, nicht die neue!
         for i in range(20):
             for key_prefix in ["color_pick_", "lines_", "darkness_"]:
-                # Lösche Keys ohne Suffix
-                key = f"{key_prefix}{i}"
-                if key in st.session_state:
-                    del st.session_state[key]
+                # Lösche Keys ohne Suffix (nur wenn version == 0)
+                if version == 0:
+                    key = f"{key_prefix}{i}"
+                    if key in st.session_state:
+                        del st.session_state[key]
                 # Lösche Keys mit alten Versionen
                 old_key = f"{key_prefix}{i}_v{version}"
                 if old_key in st.session_state:
