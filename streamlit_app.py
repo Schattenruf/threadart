@@ -1287,7 +1287,7 @@ if st.session_state.get("all_found_colors"):
                         f'<div style="background-color: {hex_color}; height: 50px; border-radius: 5px; border: 2px solid #ccc;"></div>',
                         unsafe_allow_html=True
                     )
-                    st.caption(f"{percent:.1%}")
+                    st.caption(f"{percent:.2%}")
         
         # Button zum generieren
         if st.button("✨ Vorschlag generieren"):
