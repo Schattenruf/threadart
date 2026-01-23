@@ -990,6 +990,20 @@ if generate_button:
             # Create image object
             my_img = Img(args)
 
+            # Store pin coordinates/meta for later visualization (avoid recomputing)
+            try:
+                st.session_state.pins_shape = str(my_img.args.shape)
+                st.session_state.pins_n_nodes = int(my_img.args.n_nodes)
+                st.session_state.pins_base_x = int(my_img.args.x)
+                st.session_state.pins_base_y = int(my_img.args.y)
+                # Convert torch tensors to plain floats for session_state
+                st.session_state.pins_d_coords = {
+                    int(k): [float(v[0].item()), float(v[1].item())] for k, v in my_img.args.d_coords.items()
+                }
+            except Exception:
+                # Fail silently; don't break generation UI
+                pass
+
         # Get the line dictionary (using progress bar) and capture full draw sequence
         line_dict = defaultdict(list)
         line_sequence = []
@@ -1075,6 +1089,85 @@ if st.session_state.generated_html:
     # Display the HTML output
     html_height = html_width * st.session_state.sf
     st_html(st.session_state.generated_html, height=html_height + 150, scrolling=True)
+
+    # Pin visualization
+    st.subheader("📍 Pins (Nägel/Hooks)")
+    if st.button("Show pins", key="show_pins"):
+        try:
+            pins_d_coords = st.session_state.get("pins_d_coords")
+            pins_shape = st.session_state.get("pins_shape")
+            pins_n_nodes = int(st.session_state.get("pins_n_nodes") or 0)
+            pins_base_x = int(st.session_state.get("pins_base_x") or 0)
+            pins_base_y = int(st.session_state.get("pins_base_y") or 0)
+
+            if not pins_d_coords or pins_n_nodes <= 0 or pins_base_x <= 0 or pins_base_y <= 0:
+                st.warning("No pin data available yet. Generate the thread art first.")
+            else:
+                out_w = int(html_width)
+                out_h = int(out_w * (pins_base_y / pins_base_x))
+                sx = out_w / pins_base_x
+                sy = out_h / pins_base_y
+
+                pin_r = max(2.0, out_w * 0.004)
+                stroke_w = max(0.8, out_w * 0.0012)
+                font_size = max(8, int(out_w * 0.015))
+                text_dy = font_size * 0.35
+
+                svg_lines = [
+                    f'<svg xmlns="http://www.w3.org/2000/svg" width="{out_w}" height="{out_h}" viewBox="0 0 {out_w} {out_h}">',
+                    f'<rect width="{out_w}" height="{out_h}" fill="rgb(0,0,0)"/>'
+                ]
+
+                # Outline to match chosen shape; for square images ellipse becomes a circle naturally.
+                if str(pins_shape) == "Ellipse":
+                    cx = out_w / 2
+                    cy = out_h / 2
+                    rx = (out_w - 2) / 2
+                    ry = (out_h - 2) / 2
+                    svg_lines.append(
+                        f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="{rx:.1f}" ry="{ry:.1f}" '
+                        f'stroke="rgb(90,90,90)" stroke-width="{stroke_w:.2f}" fill="none"/>'
+                    )
+                else:
+                    svg_lines.append(
+                        f'<rect x="1" y="1" width="{out_w-2}" height="{out_h-2}" '
+                        f'stroke="rgb(90,90,90)" stroke-width="{stroke_w:.2f}" fill="none"/>'
+                    )
+
+                # Pins: label pin 1 and then every 5th (1, 5, 10, 15, ...)
+                for idx in range(pins_n_nodes):
+                    coord = pins_d_coords.get(idx)
+                    if coord is None:
+                        continue
+                    y0, x0 = float(coord[0]), float(coord[1])
+                    x_px = x0 * sx
+                    y_px = y0 * sy
+
+                    svg_lines.append(
+                        f'<circle cx="{x_px:.1f}" cy="{y_px:.1f}" r="{pin_r:.1f}" '
+                        f'fill="rgb(255,0,0)" stroke="rgb(200,0,0)" stroke-width="{stroke_w:.2f}"/>'
+                    )
+
+                    pin_no = idx + 1
+                    if pin_no == 1 or (pin_no % 5) == 0:
+                        svg_lines.append(
+                            f'<text x="{x_px:.1f}" y="{(y_px + text_dy):.1f}" text-anchor="middle" '
+                            f'fill="rgb(255,255,255)" font-size="{font_size}" font-weight="700">{pin_no}</text>'
+                        )
+
+                svg_lines.append("</svg>")
+                pins_svg = "\n".join(svg_lines)
+
+                st_html(pins_svg, height=out_h + 20, scrolling=True)
+                st.download_button(
+                    label="Download pins SVG",
+                    data=pins_svg.encode("utf-8"),
+                    file_name=f"{name or 'thread_art'}_pins.svg",
+                    mime="image/svg+xml",
+                )
+        except Exception as e:
+            st.error(f"Error generating pins SVG: {str(e)}")
+            st.code(traceback.format_exc())
 
     # Download options
     st.subheader("📥 Download Options")
