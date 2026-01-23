@@ -55,12 +55,14 @@ class PictureHangerFormatter:
             hanger_num = node_idx // 2
             position_idx = node_idx % 2
             position = "L" if position_idx == 0 else "R"
-            label = f"Hanger {hanger_num:3d} {position}"
-            return str(hanger_num), position, label
+            hanger_display = hanger_num + 1  # 1-based numbering for display
+            label = f"Hanger {hanger_display:3d} {position}"
+            return str(hanger_display), position, label
         else:
             # Nail mode: 1 nail = 1 node
-            label = f"Nail {node_idx:3d}"
-            return str(node_idx), "", label
+            nail_display = node_idx + 1  # 1-based numbering for display
+            label = f"Nail {nail_display:3d}"
+            return str(nail_display), "", label
     
     def get_hanger_display(self, node_idx: int) -> str:
         """Get a nicely formatted display string for instructions."""
@@ -152,7 +154,10 @@ class ThreadArtPDFGenerator:
         num_rows: int = 18,
         include_stats: bool = True,
         version: str = "n+1",
-        use_hangers: bool = True
+        use_hangers: bool = True,
+        shape: str = "Rectangle",
+        template_aspect_ratio: float = 1.0,
+        include_template_page: bool = True
     ) -> str:
         """
         Generate a complete PDF with instructions.
@@ -188,6 +193,23 @@ class ThreadArtPDFGenerator:
             num_cols=num_cols,
             num_rows=num_rows
         )
+
+        # Add a dedicated schematic template page (pins / hangers positions)
+        if include_template_page:
+            try:
+                width, height = A4
+                template_page_path = f"{output_path}_template.pdf"
+                self._draw_template_page(
+                    output_path=template_page_path,
+                    width=width,
+                    height=height,
+                    n_nodes=n_nodes,
+                    shape=shape,
+                    template_aspect_ratio=template_aspect_ratio,
+                )
+                page_list.append(template_page_path)
+            except Exception as e:
+                print(f"Warning: Could not generate template page: {e}")
         
         # Merge pages into single PDF
         final_pdf = self._merge_pages_to_pdf(page_list, output_path, version)
@@ -197,6 +219,189 @@ class ThreadArtPDFGenerator:
             self._generate_statistics(line_dict, formatter, output_path)
         
         return final_pdf
+
+    def _draw_template_page(
+        self,
+        output_path: str,
+        width: float,
+        height: float,
+        n_nodes: int,
+        shape: str,
+        template_aspect_ratio: float,
+    ) -> None:
+        """Draw a dedicated template page (schematic), with pin positions.
+
+        - Pin numbering is 1..n_nodes
+        - Every 5th pin is labeled (5, 10, ...)
+        - For shape="Ellipse", we respect the input aspect ratio:
+          - ratio != 1 => ellipse
+          - ratio == 1 => circle
+        """
+        c = canvas.Canvas(output_path, pagesize=(width, height))
+        margin = 1.2 * cm
+
+        c.setFont(self.font_name, 18)
+        c.setFillColor(black)
+        c.drawString(margin, height - margin, "Template: Pin/Hanger Positions")
+
+        c.setFont(self.font_name, 11)
+        c.drawString(margin, height - margin - 0.7 * cm, f"Pins: 1..{n_nodes}   |   Shape: {shape}")
+
+        # Schematic box (doesn't need to be to scale)
+        box_size = min(width - 2 * margin, height - 3.4 * cm)
+        box_x = (width - box_size) / 2
+        box_y = margin
+
+        # Draw outline box
+        c.setStrokeColor(gray)
+        c.setLineWidth(1)
+        c.rect(box_x, box_y, box_size, box_size, fill=False)
+
+        # Draw chosen shape inside the box
+        inset = 0.06 * box_size
+        shape_x0 = box_x + inset
+        shape_y0 = box_y + inset
+        shape_x1 = box_x + box_size - inset
+        shape_y1 = box_y + box_size - inset
+
+        c.setStrokeColor(black)
+        c.setLineWidth(1.2)
+        if shape == "Ellipse":
+            c.ellipse(shape_x0, shape_y0, shape_x1, shape_y1, fill=False)
+        else:
+            c.rect(shape_x0, shape_y0, shape_x1 - shape_x0, shape_y1 - shape_y0, fill=False)
+
+        # Pin coordinates in local (0..1) box space
+        coords = self._calculate_pin_coordinates(
+            n_nodes=n_nodes,
+            shape=shape,
+            aspect_ratio=template_aspect_ratio,
+        )
+
+        # Render pins
+        pin_r = max(1.2, 0.012 * box_size)
+        label_font = 8
+        c.setFont(self.font_name, label_font)
+
+        for pin_num, (ux, uy) in coords.items():
+            px = shape_x0 + ux * (shape_x1 - shape_x0)
+            py = shape_y0 + uy * (shape_y1 - shape_y0)
+            c.circle(px, py, pin_r, stroke=1, fill=0)
+
+            if pin_num % 5 == 0:
+                # Slight offset so it doesn't collide with circle
+                c.drawString(px + pin_r * 1.2, py - label_font / 3, str(pin_num))
+
+        c.save()
+
+    def _calculate_pin_coordinates(
+        self,
+        n_nodes: int,
+        shape: str,
+        aspect_ratio: float,
+    ) -> Dict[int, Tuple[float, float]]:
+        """Return schematic pin coords in unit box space.
+
+        Returns a dict mapping 1-based pin number -> (ux, uy) where ux, uy in [0, 1].
+
+        Orientation matches the existing generator logic as closely as reasonable:
+        - Ellipse: pin 1 starts at 3 o'clock.
+        - Rectangle: pin 1 starts on the right side near the bottom, moving upwards.
+        """
+        coords: Dict[int, Tuple[float, float]] = {}
+
+        if n_nodes <= 0:
+            return coords
+
+        if shape == "Ellipse":
+            # Match circle/ellipse behavior based on aspect ratio (W/H).
+            ratio = float(aspect_ratio) if aspect_ratio else 1.0
+            ratio = max(1e-6, ratio)
+
+            # radii in unit box space
+            if ratio >= 1.0:
+                rx = 0.5
+                ry = 0.5 / ratio
+            else:
+                ry = 0.5
+                rx = 0.5 * ratio
+
+            # Keep a small margin
+            rx *= 0.92
+            ry *= 0.92
+
+            angles = np.linspace(0, 2 * np.pi, n_nodes, endpoint=False)
+            for i, ang in enumerate(angles):
+                # Pin 1 at 3 o'clock (rightmost)
+                ux = 0.5 + rx * np.cos(ang)
+                uy = 0.5 + ry * np.sin(ang)
+                coords[i + 1] = (float(ux), float(uy))
+            return coords
+
+        # Rectangle: distribute nodes across sides similar to coordinates.py (proportional to aspect ratio)
+        ratio = float(aspect_ratio) if aspect_ratio else 1.0
+        ratio = max(1e-6, ratio)
+
+        # Use scaled integers so we can reuse the same rounding logic
+        x = int(round(1000 * ratio))
+        y = 1000
+
+        # coordinates.py uses nx, ny derived from x,y
+        nx = 2 * int(n_nodes * 0.25 * x / (x + y))
+        ny = 2 * int(n_nodes * 0.25 * y / (x + y))
+
+        while 2 * (nx + ny) < n_nodes:
+            if ny >= nx:
+                ny += 2
+            else:
+                nx += 2
+        while 2 * (nx + ny) > n_nodes:
+            if ny >= nx:
+                ny -= 2
+            else:
+                nx -= 2
+
+        # nodes_per_side_list = [ny, nx, ny, nx]
+        nodes_right = max(1, ny)
+        nodes_top = max(1, nx)
+        nodes_left = max(1, ny)
+        nodes_bottom = max(1, nx)
+
+        pin = 1
+        # Right side: bottom -> top (start near bottom-right)
+        for i in range(nodes_right):
+            if pin > n_nodes:
+                break
+            ux = 1.0
+            uy = (i + 0.5) / nodes_right
+            coords[pin] = (ux, uy)
+            pin += 1
+        # Top: right -> left
+        for i in range(nodes_top):
+            if pin > n_nodes:
+                break
+            ux = 1.0 - (i + 0.5) / nodes_top
+            uy = 1.0
+            coords[pin] = (ux, uy)
+            pin += 1
+        # Left: top -> bottom
+        for i in range(nodes_left):
+            if pin > n_nodes:
+                break
+            ux = 0.0
+            uy = 1.0 - (i + 0.5) / nodes_left
+            coords[pin] = (ux, uy)
+            pin += 1
+        # Bottom: left -> right
+        for i in range(nodes_bottom):
+            if pin > n_nodes:
+                break
+            ux = (i + 0.5) / nodes_bottom
+            uy = 0.0
+            coords[pin] = (ux, uy)
+            pin += 1
+
+        return coords
     
     def _group_lines_by_color(
         self,

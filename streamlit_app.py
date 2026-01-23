@@ -556,6 +556,11 @@ with st.sidebar:
 
     if image_selected:
         image = Image.open(io.BytesIO(image_bytes))
+        # Store aspect ratio for PDF template (Ellipse => ellipse for non-square, circle for square)
+        try:
+            st.session_state["input_image_aspect_ratio"] = float(image.size[0]) / float(image.size[1])
+        except Exception:
+            st.session_state["input_image_aspect_ratio"] = 1.0
         st.image(
             image,
             width='stretch',
@@ -1170,7 +1175,10 @@ if st.session_state.generated_html:
                         num_rows=18,
                         include_stats=True,
                         version="n+1",
-                        use_hangers=use_hangers
+                        use_hangers=use_hangers,
+                        shape=shape,
+                        template_aspect_ratio=st.session_state.get("input_image_aspect_ratio", 1.0),
+                        include_template_page=True
                     )
                     
                     if pdf_path and os.path.exists(pdf_path):
