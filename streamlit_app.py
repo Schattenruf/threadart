@@ -1135,6 +1135,18 @@ if st.session_state.generated_html:
                             color_names.append(category)
                             color_info_list.append(color_info)
                     
+                    # IMPORTANT: Re-index seq with new color_index values!
+                    # Build mapping from old hex → new 1-based index
+                    hex_to_new_index = {}
+                    for i, hex_val in enumerate(seen_hexes):
+                        hex_to_new_index[hex_val] = i + 1  # 1-based index for PDF
+                    
+                    # Update seq with new color_index values
+                    for row in seq:
+                        old_hex = str(row.get("color_hex", "")).lower()
+                        if old_hex in hex_to_new_index:
+                            row["color_index"] = hex_to_new_index[old_hex]
+                    
                     # Debug info display
                     with st.expander("🔍 Debug Info", expanded=False):
                         st.write(f"**line_sequence**: {len(seq)} entries")
@@ -1153,6 +1165,7 @@ if st.session_state.generated_html:
                                 if len(color_order) > 20:
                                     break
                             st.write(f"**Color order (first appearance)**: {color_order}")
+                        st.write(f"**hex_to_new_index mapping**: {hex_to_new_index}")
                         st.write(f"**color_names**: {color_names}")
                         st.write(f"**group_orders**: `{repr(group_orders)}`")
                         st.write(f"**n_nodes**: {n_nodes}")
